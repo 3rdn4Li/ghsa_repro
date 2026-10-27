@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ghsa_repro.config import load_config
 from ghsa_repro.pipeline import (
+    _publish_record,
     codex_command,
     initialize_run,
     load_run,
@@ -13,6 +14,7 @@ from ghsa_repro.pipeline import (
     summarize,
 )
 from ghsa_repro.records import validate_record
+from ghsa_repro.storage import RunPaths
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = "a" * 40
@@ -158,6 +160,13 @@ class PipelineTests(unittest.TestCase):
                 "reasoning": "evidence supports fix",
             }
             self.assertEqual(validate_record(record, item, attempt), [])
+            record["current_impact"] = "not reachable; sk-examplecredential0123456789"
+            paths = RunPaths(Path(temporary) / "publication-run")
+            _publish_record(paths, record)
+            publication = paths.published_records / f"{item['target_id']}.json"
+            self.assertEqual(publication.stat().st_mode & 0o777, 0o644)
+            self.assertNotIn("sk-examplecredential", publication.read_text())
+            self.assertNotIn("reproduction", json.loads(publication.read_text()))
             record["current_source_evidence"][0]["commit"] = "b" * 40
             self.assertIn(
                 "source evidence must bind to the current-default commit",

@@ -212,6 +212,11 @@ Residual reachability with lower impact or stronger prerequisites must use
 `risk_downgraded_current_default` and assign a lower current severity. Prior records are never
 treated as proof; current upstream and reproduction evidence remain mandatory.
 
+Every accepted record also produces a credential-scrubbed, non-PoC summary under
+`published-records/<GHSA>.json`. Consumers such as a protected reporting dashboard can read this
+directory incrementally without receiving complete reproduction commands, model logs, or private
+canonical records.
+
 ## Monitoring and outputs
 
 ```bash
@@ -227,6 +232,7 @@ runs/<name>/
   run-config.json                immutable non-secret effective config
   input-metadata.json            input/config hashes and provenance
   records/<GHSA>.json            canonical validated records
+  published-records/<GHSA>.json  redacted incremental dashboard summary
   failures/<GHSA>.json           retryable failure evidence
   targets/<GHSA>/
     archived-inputs/             immutable advisory and normalized case

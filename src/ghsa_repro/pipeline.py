@@ -158,6 +158,7 @@ def initialize_run(
         paths.prior_records,
     ):
         directory.mkdir(mode=0o700, exist_ok=True)
+    paths.published_records.mkdir(mode=0o755, parents=True, exist_ok=True)
     prior_metadata = []
     target_ids = {item["target_id"] for item in manifest}
     for label, source in sorted(prior_record_sets.items()):
@@ -373,6 +374,39 @@ def _resolve_binary(value: str) -> str:
     if not resolved:
         raise RuntimeError(f"Codex binary is not on PATH: {value}")
     return resolved
+
+
+def _publish_record(paths: RunPaths, record: dict[str, Any]) -> None:
+    fields = (
+        "schema_version",
+        "target_id",
+        "source",
+        "repository",
+        "audited_at",
+        "current_default",
+        "reported_root_cause",
+        "attacker_boundary",
+        "reported_severity",
+        "reported_impact",
+        "current_severity",
+        "current_impact",
+        "impact_equivalence",
+        "attacker_prerequisite_change",
+        "risk_change",
+        "risk_comparison",
+        "current_status",
+        "proof_level",
+        "equivalent_paths_checked",
+        "reasoning",
+    )
+    compact = {field: record.get(field) for field in fields}
+    clean, redactions = _sanitize_prior_value(compact)
+    if isinstance(clean, dict):
+        clean["publication_redactions"] = redactions
+    paths.published_records.mkdir(mode=0o755, parents=True, exist_ok=True)
+    atomic_json(
+        paths.published_records / f"{record['target_id']}.json", clean, mode=0o644
+    )
 
 
 def codex_command(
@@ -742,6 +776,7 @@ class AuditPipeline:
                         "record": str(canonical.relative_to(self.paths.root)),
                     },
                 )
+                _publish_record(self.paths, record)
                 (self.paths.failures / f"{target_id}.json").unlink(missing_ok=True)
                 with self.write_lock:
                     summarize(self.paths, self.config)

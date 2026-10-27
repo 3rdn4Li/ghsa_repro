@@ -98,6 +98,10 @@ class RunPaths:
         return self.root / "prior-records"
 
     @property
+    def published_records(self) -> Path:
+        return self.root / "published-records"
+
+    @property
     def lock(self) -> Path:
         return self.root / "run.lock"
 
