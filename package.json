@@ -1,0 +1,8 @@
+{
+  "name": "ghsa-repro-runtime",
+  "private": true,
+  "description": "Pinned Chat Completions-compatible Codex runtime for ghsa_repro",
+  "dependencies": {
+    "@openai/codex": "0.80.0"
+  }
+}

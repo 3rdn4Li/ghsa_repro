@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/3rdn4Li/ghsa_repro/schemas/audit-record.schema.json",
+  "title": "GHSA current-upstream audit record",
+  "type": "object",
+  "required": [
+    "schema_version", "target_id", "source", "repository", "recorded_vulnerable_commit",
+    "proposed_fixed_commit", "original_exclusion_reason", "rejected_candidates",
+    "advisory_year_month", "audited_at", "current_default", "maintained_branches_examined",
+    "reported_root_cause", "attacker_boundary", "current_status", "proof_level",
+    "equivalent_paths_checked", "reproduction", "current_source_evidence",
+    "complete_fix_outside_recorded_descendant_history", "earliest_complete_current_fix",
+    "artifact_root", "reasoning"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "target_id": {"type": "string", "pattern": "^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$"},
+    "source": {"const": "GHSA"},
+    "repository": {"type": "string", "pattern": "^https://"},
+    "recorded_vulnerable_commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+    "proposed_fixed_commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+    "original_exclusion_reason": {"type": "null"},
+    "rejected_candidates": {"type": "array"},
+    "advisory_year_month": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}$"},
+    "audited_at": {"type": "string", "format": "date-time"},
+    "current_default": {
+      "type": "object",
+      "required": ["ref", "commit", "resolved_at"],
+      "properties": {
+        "ref": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "resolved_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "maintained_branches_examined": {"type": "array"},
+    "reported_root_cause": {"type": "string", "minLength": 1},
+    "attacker_boundary": {"type": "string", "minLength": 1},
+    "current_status": {
+      "enum": [
+        "still_present_current_default", "partially_fixed_but_same_vulnerability_reachable",
+        "fixed_current_default", "fixed_default_but_present_on_maintained_release",
+        "feature_removed_or_security_boundary_eliminated", "different_issue_only", "indeterminate"
+      ]
+    },
+    "proof_level": {"enum": ["executable", "static_strong", "static_partial", "indeterminate"]},
+    "equivalent_paths_checked": {"type": "array", "minItems": 1},
+    "reproduction": {
+      "type": "object",
+      "required": ["environment_preparation_commands", "commands", "observations", "old_poc_result", "current_equivalent_path_result"]
+    },
+    "current_source_evidence": {"type": "array", "minItems": 1},
+    "complete_fix_outside_recorded_descendant_history": {"type": ["boolean", "null"]},
+    "earliest_complete_current_fix": {"type": ["object", "null"]},
+    "artifact_root": {"type": "string", "pattern": "^attempts/[0-9]{2}/artifacts$"},
+    "reasoning": {"type": "string", "minLength": 1}
+  }
+}

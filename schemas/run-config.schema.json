@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/3rdn4Li/ghsa_repro/schemas/run-config.schema.json",
+  "title": "GHSA Repro run configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "provider", "codex", "github_token_env"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "github_token_env": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "model", "base_url", "api_key_env", "wire_api", "supports_output_schema", "tls_verify"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "base_url": {"type": "string", "pattern": "^https?://"},
+        "api_key_env": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+        "wire_api": {"type": "string", "enum": ["chat", "responses"]},
+        "supports_output_schema": {"type": "boolean"},
+        "tls_verify": {"type": "boolean"},
+        "request_max_retries": {"type": "integer", "minimum": 0},
+        "stream_max_retries": {"type": "integer", "minimum": 0},
+        "stream_idle_timeout_ms": {"type": "integer", "minimum": 1000}
+      }
+    },
+    "codex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["binary", "max_jobs", "default_jobs", "timeout_seconds", "max_attempts_per_pass", "reasoning_effort", "cyber_access_program"],
+      "properties": {
+        "binary": {"type": "string", "minLength": 1},
+        "max_jobs": {"type": "integer", "minimum": 1},
+        "default_jobs": {"type": "integer", "minimum": 1},
+        "timeout_seconds": {"type": "integer", "minimum": 60},
+        "max_attempts_per_pass": {"type": "integer", "minimum": 1, "maximum": 10},
+        "reasoning_effort": {"type": ["string", "null"], "enum": [null, "low", "medium", "high", "xhigh"]},
+        "cyber_access_program": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

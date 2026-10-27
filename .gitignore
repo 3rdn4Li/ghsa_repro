@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+dist/
+build/
+*.egg-info/
+node_modules/
+
+# Runtime data is never source code.
+runs/
+runtime/
+inputs/
+*.log
+config.local.json
+.env
+.env.*
+!.env.example

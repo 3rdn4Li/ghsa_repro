@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/3rdn4Li/ghsa_repro/schemas/input-record.schema.json",
+  "title": "GHSA Repro input record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "ghsa_id", "published_at", "severity", "summary", "packages"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "ghsa_id": {"type": "string", "pattern": "^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$"},
+    "cve_id": {"type": ["string", "null"], "pattern": "^CVE-[0-9]{4}-[0-9]{4,}$"},
+    "published_at": {"type": "string", "format": "date-time"},
+    "severity": {"type": "string", "enum": ["low", "moderate", "high", "critical"]},
+    "summary": {"type": "string", "minLength": 1},
+    "cvss_vector": {"type": ["string", "null"]},
+    "source_url": {"type": ["string", "null"], "format": "uri"},
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ecosystem", "name"],
+        "properties": {
+          "ecosystem": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "vulnerable_version_range": {"type": ["string", "null"]},
+          "first_patched_version": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

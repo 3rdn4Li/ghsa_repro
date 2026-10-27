@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "provider": {
+    "id": "glm",
+    "name": "GLM local",
+    "model": "glm-5.3",
+    "base_url": "https://localhost:4443",
+    "api_key_env": "GLM_API_KEY_SECLAB",
+    "wire_api": "chat",
+    "supports_output_schema": false,
+    "tls_verify": false,
+    "request_max_retries": 10,
+    "stream_max_retries": 20,
+    "stream_idle_timeout_ms": 900000
+  },
+  "codex": {
+    "binary": "node_modules/.bin/codex",
+    "max_jobs": 16,
+    "default_jobs": 8,
+    "timeout_seconds": 7200,
+    "max_attempts_per_pass": 2,
+    "reasoning_effort": null,
+    "cyber_access_program": null
+  },
+  "github_token_env": "GH_TOKEN"
+}
