@@ -51,6 +51,21 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertIn("--output-schema", command)
 
+        chatgpt = load_config(ROOT / "config.daybreak.example.json")
+        command = codex_command(
+            chatgpt,
+            "/usr/bin/codex",
+            Path("/run/target"),
+            Path("/run/output.json"),
+            Path("/run/schema.json"),
+            "safe prompt",
+            None,
+        )
+        joined = " ".join(command)
+        self.assertIn('model_provider="openai"', joined)
+        self.assertNotIn("model_providers.openai.base_url", joined)
+        self.assertNotIn("env_key", joined)
+
     def test_initialize_is_immutable_and_resumable(self):
         with tempfile.TemporaryDirectory() as temporary:
             run = Path(temporary) / "runs" / "2023-critical"

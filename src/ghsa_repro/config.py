@@ -16,9 +16,10 @@ class ProviderConfig:
     id: str
     name: str
     model: str
-    base_url: str
+    auth: str
+    base_url: str | None
     base_url_env: str | None
-    api_key_env: str
+    api_key_env: str | None
     wire_api: str
     supports_output_schema: bool
     tls_verify: bool
@@ -47,7 +48,11 @@ class RunConfig:
     def public_dict(self) -> dict[str, object]:
         """Return the complete non-secret effective configuration."""
         provider = vars(self.provider).copy()
-        if self.provider.base_url_env:
+        if self.provider.auth == "chatgpt":
+            provider.pop("base_url")
+            provider.pop("base_url_env")
+            provider.pop("api_key_env")
+        elif self.provider.base_url_env:
             provider.pop("base_url")
         else:
             provider.pop("base_url_env")
@@ -106,7 +111,6 @@ def load_config(path: Path) -> RunConfig:
         "id",
         "name",
         "model",
-        "api_key_env",
         "wire_api",
         "supports_output_schema",
         "tls_verify",
@@ -114,6 +118,8 @@ def load_config(path: Path) -> RunConfig:
     provider_optional = {
         "base_url",
         "base_url_env",
+        "api_key_env",
+        "auth",
         "request_max_retries",
         "stream_max_retries",
         "stream_idle_timeout_ms",
@@ -122,33 +128,49 @@ def load_config(path: Path) -> RunConfig:
     provider_id = _string(provider["id"], "provider.id")
     if not PROVIDER_ID.fullmatch(provider_id):
         raise ValueError("provider.id must match ^[a-z][a-z0-9_-]*$")
+    auth = provider.get("auth", "api_key")
+    if auth not in {"api_key", "chatgpt"}:
+        raise ValueError("provider.auth must be api_key or chatgpt")
     base_url_env_value = provider.get("base_url_env")
     base_url_value = provider.get("base_url")
-    if bool(base_url_env_value) == bool(base_url_value):
-        raise ValueError("provider requires exactly one of base_url or base_url_env")
+    api_key_env_value = provider.get("api_key_env")
     base_url_env = None
-    if base_url_env_value:
-        base_url_env = _string(base_url_env_value, "provider.base_url_env")
-        if not ENV_NAME.fullmatch(base_url_env):
-            raise ValueError("provider.base_url_env is not a valid environment variable name")
-        base_url = _string(os.environ.get(base_url_env), base_url_env).rstrip("/")
+    base_url = None
+    api_key_env = None
+    if auth == "chatgpt":
+        if provider_id != "openai":
+            raise ValueError("provider.auth chatgpt requires provider.id openai")
+        if any((base_url_env_value, base_url_value, api_key_env_value)):
+            raise ValueError(
+                "provider.auth chatgpt does not accept base_url, base_url_env, or api_key_env"
+            )
     else:
-        base_url = _string(base_url_value, "provider.base_url").rstrip("/")
-    parsed = urlsplit(base_url)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.netloc
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise ValueError(
-            "provider.base_url must be an HTTP(S) origin or path without query/fragment"
-        )
-    api_key_env = _string(provider["api_key_env"], "provider.api_key_env")
-    if not ENV_NAME.fullmatch(api_key_env):
-        raise ValueError(
-            "provider.api_key_env is not a valid environment variable name"
-        )
+        if bool(base_url_env_value) == bool(base_url_value):
+            raise ValueError("provider requires exactly one of base_url or base_url_env")
+        if base_url_env_value:
+            base_url_env = _string(base_url_env_value, "provider.base_url_env")
+            if not ENV_NAME.fullmatch(base_url_env):
+                raise ValueError(
+                    "provider.base_url_env is not a valid environment variable name"
+                )
+            base_url = _string(os.environ.get(base_url_env), base_url_env).rstrip("/")
+        else:
+            base_url = _string(base_url_value, "provider.base_url").rstrip("/")
+        parsed = urlsplit(base_url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "provider.base_url must be an HTTP(S) origin or path without query/fragment"
+            )
+        api_key_env = _string(api_key_env_value, "provider.api_key_env")
+        if not ENV_NAME.fullmatch(api_key_env):
+            raise ValueError(
+                "provider.api_key_env is not a valid environment variable name"
+            )
     wire_api = _string(provider["wire_api"], "provider.wire_api")
     if wire_api not in {"chat", "responses"}:
         raise ValueError("provider.wire_api must be chat or responses")
@@ -160,6 +182,7 @@ def load_config(path: Path) -> RunConfig:
         id=provider_id,
         name=_string(provider["name"], "provider.name"),
         model=_string(provider["model"], "provider.model"),
+        auth=auth,
         base_url=base_url,
         base_url_env=base_url_env,
         api_key_env=api_key_env,
@@ -222,7 +245,9 @@ def load_config(path: Path) -> RunConfig:
 
 
 def require_secret(config: RunConfig) -> None:
-    if not os.environ.get(config.provider.api_key_env):
+    if config.provider.auth == "api_key" and not os.environ.get(
+        config.provider.api_key_env or ""
+    ):
         raise RuntimeError(
             f"required environment variable is not set: {config.provider.api_key_env}"
         )

@@ -126,6 +126,8 @@ multiple Codex builds are installed, test the intended one with `--codex-binary 
 Important fields:
 
 - `provider.model`: model sent to Codex
+- `provider.auth`: omit or set `api_key` for an OpenAI-compatible endpoint; set `chatgpt`
+  to use the existing local `codex login` session with the built-in `openai` provider
 - `provider.base_url`: OpenAI-compatible endpoint
 - `provider.base_url_env`: alternative to `base_url`; resolves the endpoint from an environment
   variable without writing it into the run configuration or attempt metadata
@@ -147,8 +149,9 @@ The full configuration contract is [`schemas/run-config.schema.json`](schemas/ru
 Do not put credentials in this file.
 
 [`config.daybreak.example.json`](config.daybreak.example.json) is the non-secret Daybreak Blue
-profile. It reads both endpoint and key from `GPT_LITELLM_BASE_URL` and
-`GPT_LITELLM_API_KEY`, enables `daybreak_blue`, and permits a 48-worker run. Public OpenAI
+profile. It uses the existing local `codex login` session, enables `daybreak_blue`, and permits a
+48-worker run. This exposes the active Codex login to the trusted audit agent process while it is
+running; do not run unreviewed prompts and scan outputs for credentials. Public OpenAI
 documentation does not currently specify this model alias, so use `doctor` and a one-target
 validation with the intended account before starting parallel work.
 

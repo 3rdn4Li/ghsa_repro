@@ -1,11 +1,10 @@
 {
   "schema_version": 1,
   "provider": {
-    "id": "litellm",
-    "name": "LiteLLM Daybreak",
+    "id": "openai",
+    "name": "OpenAI ChatGPT login",
     "model": "gpt-daybreak-blue-latest",
-    "base_url_env": "GPT_LITELLM_BASE_URL",
-    "api_key_env": "GPT_LITELLM_API_KEY",
+    "auth": "chatgpt",
     "wire_api": "responses",
     "supports_output_schema": true,
     "tls_verify": true,

@@ -416,7 +416,7 @@ def codex_command(
     envelope: Path,
     schema: Path,
     prompt: str,
-    base_url: str,
+    base_url: str | None,
 ) -> list[str]:
     provider = config.provider
     command = [
@@ -430,25 +430,32 @@ def codex_command(
         provider.model,
         "-c",
         f"model_provider={json.dumps(provider.id)}",
-        "-c",
-        f"model_providers.{provider.id}.name={json.dumps(provider.name)}",
-        "-c",
-        f"model_providers.{provider.id}.base_url={json.dumps(base_url)}",
-        "-c",
-        f"model_providers.{provider.id}.env_key={json.dumps(provider.api_key_env)}",
-        "-c",
-        f"model_providers.{provider.id}.wire_api={json.dumps(provider.wire_api)}",
-        "-c",
-        f"model_providers.{provider.id}.requires_openai_auth=false",
-        "-c",
-        f"model_providers.{provider.id}.supports_websockets=false",
-        "-c",
-        f"model_providers.{provider.id}.request_max_retries={provider.request_max_retries}",
-        "-c",
-        f"model_providers.{provider.id}.stream_max_retries={provider.stream_max_retries}",
-        "-c",
-        f"model_providers.{provider.id}.stream_idle_timeout_ms={provider.stream_idle_timeout_ms}",
     ]
+    if provider.auth == "api_key":
+        if not base_url or not provider.api_key_env:
+            raise ValueError("API-key provider is missing its endpoint or credential env")
+        command.extend(
+            [
+                "-c",
+                f"model_providers.{provider.id}.name={json.dumps(provider.name)}",
+                "-c",
+                f"model_providers.{provider.id}.base_url={json.dumps(base_url)}",
+                "-c",
+                f"model_providers.{provider.id}.env_key={json.dumps(provider.api_key_env)}",
+                "-c",
+                f"model_providers.{provider.id}.wire_api={json.dumps(provider.wire_api)}",
+                "-c",
+                f"model_providers.{provider.id}.requires_openai_auth=false",
+                "-c",
+                f"model_providers.{provider.id}.supports_websockets=false",
+                "-c",
+                f"model_providers.{provider.id}.request_max_retries={provider.request_max_retries}",
+                "-c",
+                f"model_providers.{provider.id}.stream_max_retries={provider.stream_max_retries}",
+                "-c",
+                f"model_providers.{provider.id}.stream_idle_timeout_ms={provider.stream_idle_timeout_ms}",
+            ]
+        )
     if config.codex.reasoning_effort:
         command.extend(
             [
@@ -493,7 +500,18 @@ def agent_environment(config: RunConfig, runtime_root: Path) -> dict[str, str]:
         if os.environ.get(key)
     }
     environment.update({key: str(path) for key, path in runtime_dirs.items()})
-    environment[config.provider.api_key_env] = os.environ[config.provider.api_key_env]
+    if config.provider.auth == "api_key":
+        assert config.provider.api_key_env is not None
+        environment[config.provider.api_key_env] = os.environ[
+            config.provider.api_key_env
+        ]
+    else:
+        auth_home = Path(
+            os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))
+        ).resolve()
+        if not (auth_home / "auth.json").is_file():
+            raise RuntimeError(f"ChatGPT Codex login was not found under {auth_home}")
+        environment["CODEX_HOME"] = str(auth_home)
     return environment
 
 
@@ -548,7 +566,11 @@ class AuditPipeline:
             except ProcessLookupError:
                 pass
 
-    def _start_proxy(self) -> str:
+    def _start_proxy(self) -> str | None:
+        if self.config.provider.auth == "chatgpt":
+            return None
+        assert self.config.provider.base_url is not None
+        assert self.config.provider.api_key_env is not None
         if self.config.provider.tls_verify:
             return self.config.provider.base_url
         with socket.socket() as probe:
@@ -664,7 +686,7 @@ class AuditPipeline:
             return False
 
     def _audit_one(
-        self, item: dict[str, Any], timeout_seconds: int, base_url: str
+        self, item: dict[str, Any], timeout_seconds: int, base_url: str | None
     ) -> dict[str, Any]:
         target_id = item["target_id"]
         if self._checkpoint_valid(item):
@@ -712,6 +734,7 @@ class AuditPipeline:
                     "reasoning_effort": self.config.codex.reasoning_effort,
                     "cyber_access_program": self.config.codex.cyber_access_program,
                     "provider_id": self.config.provider.id,
+                    "provider_auth": self.config.provider.auth,
                     "api_key_env": self.config.provider.api_key_env,
                     "base_url": None if self.config.provider.base_url_env else self.config.provider.base_url,
                     "base_url_env": self.config.provider.base_url_env,

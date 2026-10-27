@@ -11,15 +11,27 @@
     "provider": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "model", "api_key_env", "wire_api", "supports_output_schema", "tls_verify"],
+      "required": ["id", "name", "model", "wire_api", "supports_output_schema", "tls_verify"],
       "oneOf": [
-        {"required": ["base_url"], "not": {"required": ["base_url_env"]}},
-        {"required": ["base_url_env"], "not": {"required": ["base_url"]}}
+        {
+          "properties": {"auth": {"const": "chatgpt"}, "id": {"const": "openai"}},
+          "required": ["auth"],
+          "not": {"anyOf": [{"required": ["base_url"]}, {"required": ["base_url_env"]}, {"required": ["api_key_env"]}]}
+        },
+        {
+          "anyOf": [{"not": {"required": ["auth"]}}, {"properties": {"auth": {"const": "api_key"}}, "required": ["auth"]}],
+          "required": ["api_key_env"],
+          "oneOf": [
+            {"required": ["base_url"], "not": {"required": ["base_url_env"]}},
+            {"required": ["base_url_env"], "not": {"required": ["base_url"]}}
+          ]
+        }
       ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
         "name": {"type": "string", "minLength": 1},
         "model": {"type": "string", "minLength": 1},
+        "auth": {"type": "string", "enum": ["api_key", "chatgpt"]},
         "base_url": {"type": "string", "pattern": "^https?://"},
         "base_url_env": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
         "api_key_env": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},

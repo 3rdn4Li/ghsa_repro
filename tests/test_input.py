@@ -46,7 +46,9 @@ class InputTests(unittest.TestCase):
     def test_endpoint_can_be_resolved_without_persisting_its_value(self):
         with tempfile.TemporaryDirectory() as temporary:
             config_path = Path(temporary) / "config.json"
-            config = json.loads((ROOT / "config.daybreak.example.json").read_text())
+            config = json.loads((ROOT / "config.example.json").read_text())
+            config["provider"].pop("base_url")
+            config["provider"]["base_url_env"] = "GPT_LITELLM_BASE_URL"
             config_path.write_text(json.dumps(config))
             previous = os.environ.get("GPT_LITELLM_BASE_URL")
             os.environ["GPT_LITELLM_BASE_URL"] = "https://endpoint.example.test/v1"
@@ -61,6 +63,16 @@ class InputTests(unittest.TestCase):
             self.assertEqual(public["base_url_env"], "GPT_LITELLM_BASE_URL")
             self.assertNotIn("base_url", public)
             self.assertNotIn("endpoint.example.test", json.dumps(public))
+
+    def test_chatgpt_login_config_has_no_endpoint_or_key(self):
+        config = load_config(ROOT / "config.daybreak.example.json")
+        self.assertEqual(config.provider.auth, "chatgpt")
+        self.assertEqual(config.provider.id, "openai")
+        self.assertIsNone(config.provider.api_key_env)
+        public = config.public_dict()["provider"]
+        self.assertNotIn("api_key_env", public)
+        self.assertNotIn("base_url", public)
+        self.assertNotIn("base_url_env", public)
 
 
 if __name__ == "__main__":
