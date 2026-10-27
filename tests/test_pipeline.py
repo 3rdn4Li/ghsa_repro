@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from dataclasses import replace
@@ -237,7 +238,8 @@ class PipelineTests(unittest.TestCase):
             prior = temporary / "prior"
             prior.mkdir()
             prior.joinpath("GHSA-xxxx-yyyy-zzzz.json").write_text(
-                '{"target_id":"GHSA-xxxx-yyyy-zzzz","model":"old"}\n'
+                '{"target_id":"GHSA-xxxx-yyyy-zzzz","model":"old",'
+                '"note":"sk-examplecredential0123456789"}\n'
             )
             run = temporary / "runs" / "reassessment"
             initialize_run(
@@ -251,6 +253,9 @@ class PipelineTests(unittest.TestCase):
             frozen = run / "prior-records/old-model/GHSA-xxxx-yyyy-zzzz.json"
             self.assertTrue(frozen.is_file())
             self.assertEqual(frozen.stat().st_mode & 0o777, 0o444)
+            self.assertNotIn("sk-examplecredential", frozen.read_text())
+            metadata = json.loads((run / "input-metadata.json").read_text())
+            self.assertEqual(metadata["prior_record_sets"][0]["redactions"], 1)
 
 
 if __name__ == "__main__":

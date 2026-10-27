@@ -39,6 +39,57 @@ from .storage import (
     utcnow,
 )
 
+PRIOR_SECRET_PATTERNS = (
+    re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+    re.compile(
+        r"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[A-Za-z0-9._~+/=-]{12,}"
+    ),
+)
+
+
+def _sanitize_prior_value(value: object) -> tuple[object, int]:
+    if isinstance(value, str):
+        redactions = 0
+        for pattern in PRIOR_SECRET_PATTERNS:
+            value, count = pattern.subn(
+                lambda match: (match.group(1) if match.lastindex else "")
+                + "[REDACTED]",
+                value,
+            )
+            redactions += count
+        return value, redactions
+    if isinstance(value, list):
+        output, redactions = [], 0
+        for item in value:
+            clean, count = _sanitize_prior_value(item)
+            output.append(clean)
+            redactions += count
+        return output, redactions
+    if isinstance(value, dict):
+        output, redactions = {}, 0
+        for key, item in value.items():
+            lowered = str(key).lower()
+            secret_key = lowered in {
+                "password",
+                "token",
+                "secret",
+                "api_key",
+                "apikey",
+                "authorization",
+                "cookie",
+            } or lowered.endswith(("_password", "_token", "_secret", "_api_key"))
+            if secret_key and item not in (None, "", False):
+                output[key] = "[REDACTED]"
+                redactions += 1
+            else:
+                clean, count = _sanitize_prior_value(item)
+                output[key] = clean
+                redactions += count
+        return output, redactions
+    return value, 0
+
 
 def initialize_run(
     input_path: Path,
@@ -116,6 +167,7 @@ def initialize_run(
         if not source.is_dir():
             raise ValueError(f"prior record directory does not exist: {source}")
         copied = 0
+        redactions = 0
         destination = paths.prior_records / label
         destination.mkdir(mode=0o700, exist_ok=False)
         for target_id in sorted(target_ids):
@@ -125,10 +177,20 @@ def initialize_run(
             value = read_object(prior)
             if value.get("target_id") != target_id:
                 raise ValueError(f"prior record target mismatch: {prior}")
-            immutable_text(destination / prior.name, prior.read_text(encoding="utf-8"))
+            clean, count = _sanitize_prior_value(value)
+            immutable_text(
+                destination / prior.name,
+                json.dumps(clean, indent=2, sort_keys=True) + "\n",
+            )
             copied += 1
+            redactions += count
         prior_metadata.append(
-            {"label": label, "source_directory": str(source), "copied_records": copied}
+            {
+                "label": label,
+                "source_directory": str(source),
+                "copied_records": copied,
+                "redactions": redactions,
+            }
         )
     if run_kind == "impact_reassessment":
         missing_prior = [
