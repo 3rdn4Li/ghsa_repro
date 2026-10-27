@@ -7,13 +7,16 @@
     "schema_version", "target_id", "source", "repository", "recorded_vulnerable_commit",
     "proposed_fixed_commit", "original_exclusion_reason", "rejected_candidates",
     "advisory_year_month", "audited_at", "current_default", "maintained_branches_examined",
-    "reported_root_cause", "attacker_boundary", "current_status", "proof_level",
+    "reported_root_cause", "attacker_boundary", "reported_severity", "reported_impact",
+    "current_severity", "current_impact", "impact_equivalence",
+    "attacker_prerequisite_change", "risk_change", "risk_comparison",
+    "current_status", "proof_level",
     "equivalent_paths_checked", "reproduction", "current_source_evidence",
     "complete_fix_outside_recorded_descendant_history", "earliest_complete_current_fix",
     "artifact_root", "reasoning"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "target_id": {"type": "string", "pattern": "^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$"},
     "source": {"const": "GHSA"},
     "repository": {"type": "string", "pattern": "^https://"},
@@ -35,11 +38,20 @@
     "maintained_branches_examined": {"type": "array"},
     "reported_root_cause": {"type": "string", "minLength": 1},
     "attacker_boundary": {"type": "string", "minLength": 1},
+    "reported_severity": {"enum": ["critical", "high", "moderate", "low"]},
+    "reported_impact": {"type": "string", "minLength": 1},
+    "current_severity": {"enum": ["critical", "high", "moderate", "low", "none", "unknown"]},
+    "current_impact": {"type": "string", "minLength": 1},
+    "impact_equivalence": {"enum": ["same_or_greater", "reduced", "not_reached", "different_issue", "unproven"]},
+    "attacker_prerequisite_change": {"enum": ["unchanged", "stricter", "looser", "different", "unproven"]},
+    "risk_change": {"enum": ["unchanged_or_higher", "downgraded", "not_reachable", "different_issue", "unproven"]},
+    "risk_comparison": {"type": "string", "minLength": 1},
     "current_status": {
       "enum": [
         "still_present_current_default", "partially_fixed_but_same_vulnerability_reachable",
         "fixed_current_default", "fixed_default_but_present_on_maintained_release",
-        "feature_removed_or_security_boundary_eliminated", "different_issue_only", "indeterminate"
+        "feature_removed_or_security_boundary_eliminated", "different_issue_only",
+        "risk_downgraded_current_default", "indeterminate"
       ]
     },
     "proof_level": {"enum": ["executable", "static_strong", "static_partial", "indeterminate"]},

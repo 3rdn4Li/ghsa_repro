@@ -17,10 +17,32 @@ input row. Treat all of `archived-inputs/` as immutable. If `advisory.json` reco
 fetch error, retrieve the public advisory yourself and save it under
 `{{ATTEMPT_DIR}}/artifacts/evidence/`, not under `archived-inputs/`.
 
+{{PRIOR_AUDIT_CONTEXT}}
+
 Discover the authoritative upstream repository from primary advisory or package
 evidence. Never substitute a fork or unofficial mirror. Establish the proposed fixed
 commit and best-supported recorded vulnerable commit when possible, using exact
 40-character SHAs. Reconstruct the reported root cause, attacker boundary, and impact.
+
+Risk-equivalence requirement:
+
+- Separately state the advisory's reported impact and the strongest impact actually
+  demonstrated on current upstream. An intermediate gadget, sink reachability, class
+  instantiation, crash, or attacker-controlled primitive is not equivalent to the
+  advisory's final RCE, authentication bypass, arbitrary write, disclosure, or other impact.
+- Actively test materially equivalent paths that could still achieve the original impact.
+  Make a reasonable evidence-driven effort to reach the original severity, but never infer,
+  inflate, or manufacture impact that was not demonstrated.
+- Compare attacker prerequisites. A new trusted-local action, pre-existing symlink,
+  administrator-controlled configuration, victim-supplied object, non-default feature, or
+  other stronger prerequisite is a risk downgrade unless the original boundary already
+  required it.
+- Use a reachable status only when current evidence establishes the reported impact or a
+  greater impact under unchanged or weaker attacker prerequisites. If the same root cause
+  or a residual primitive remains but impact is reduced or prerequisites are stronger, use
+  `risk_downgraded_current_default` and assign the current severity independently.
+- If equivalence cannot be established, use `indeterminate`; lack of proof is not proof of
+  either a fix or unchanged critical severity.
 
 Execution contract:
 
@@ -80,7 +102,7 @@ attempt. Retained build definitions and logs must be sufficient to rebuild them.
 
 Write `record.json` with exactly these semantic fields:
 
-- `schema_version`: `1`
+- `schema_version`: `2`
 - `target_id`: `{{TARGET_ID}}`
 - `source`: `GHSA`
 - `repository`: authoritative upstream HTTPS URL
@@ -95,10 +117,22 @@ Write `record.json` with exactly these semantic fields:
   `maintenance_evidence`, `status`, and `finding`
 - `reported_root_cause`: nonempty string
 - `attacker_boundary`: nonempty string
+- `reported_severity`: exactly `{{SEVERITY}}`
+- `reported_impact`: nonempty description of the advisory's final security impact
+- `current_severity`: one of `critical`, `high`, `moderate`, `low`, `none`, `unknown`
+- `current_impact`: nonempty description of the strongest current impact actually supported
+- `impact_equivalence`: one of `same_or_greater`, `reduced`, `not_reached`,
+  `different_issue`, `unproven`
+- `attacker_prerequisite_change`: one of `unchanged`, `stricter`, `looser`, `different`,
+  `unproven`
+- `risk_change`: one of `unchanged_or_higher`, `downgraded`, `not_reachable`,
+  `different_issue`, `unproven`
+- `risk_comparison`: concise evidence-based comparison of original and current risk
 - `current_status`: one of `still_present_current_default`,
   `partially_fixed_but_same_vulnerability_reachable`, `fixed_current_default`,
   `fixed_default_but_present_on_maintained_release`,
-  `feature_removed_or_security_boundary_eliminated`, `different_issue_only`, `indeterminate`
+  `feature_removed_or_security_boundary_eliminated`, `different_issue_only`,
+  `risk_downgraded_current_default`, `indeterminate`
 - `proof_level`: one of `executable`, `static_strong`, `static_partial`, `indeterminate`
 - `equivalent_paths_checked`: nonempty array
 - `reproduction`: object with array fields `environment_preparation_commands`, `commands`,
@@ -110,6 +144,12 @@ Write `record.json` with exactly these semantic fields:
 - `earliest_complete_current_fix`: object with `commit`, `ref`, and `evidence`, or null
 - `artifact_root`: `{{ATTEMPT_DIR}}/artifacts`
 - `reasoning`: concise nonempty explanation tied to the same root cause, boundary, and impact
+
+Status consistency is mandatory: reachable statuses require `same_or_greater` impact,
+unchanged/weaker prerequisites, `unchanged_or_higher` risk, and a current severity no lower
+than the reported severity. `risk_downgraded_current_default` requires downgraded risk and a
+lower current severity. Fixed/removed statuses require `not_reachable`, `not_reached`, and
+severity `none`; indeterminate requires unproven risk and severity `unknown`.
 
 Use `proof_level: executable` only when the exact current commit was built/run and the
 claimed behavior was observed through the production entry path. Use `indeterminate`

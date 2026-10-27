@@ -8,7 +8,7 @@ from typing import Any
 from .storage import atomic_json, sha256
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
-CURRENT_STATUSES = {
+LEGACY_CURRENT_STATUSES = {
     "still_present_current_default",
     "partially_fixed_but_same_vulnerability_reachable",
     "fixed_current_default",
@@ -17,6 +17,7 @@ CURRENT_STATUSES = {
     "different_issue_only",
     "indeterminate",
 }
+CURRENT_STATUSES = LEGACY_CURRENT_STATUSES | {"risk_downgraded_current_default"}
 PROOF_LEVELS = {"executable", "static_strong", "static_partial", "indeterminate"}
 STILL_PRESENT = {
     "still_present_current_default",
@@ -27,7 +28,8 @@ FIXED_NOW = {
     "feature_removed_or_security_boundary_eliminated",
     "different_issue_only",
 }
-RECORD_FIELDS = {
+RISK_DOWNGRADED = {"risk_downgraded_current_default"}
+LEGACY_RECORD_FIELDS = {
     "schema_version",
     "target_id",
     "source",
@@ -51,6 +53,34 @@ RECORD_FIELDS = {
     "earliest_complete_current_fix",
     "artifact_root",
     "reasoning",
+}
+RISK_FIELDS = {
+    "reported_severity",
+    "reported_impact",
+    "current_severity",
+    "current_impact",
+    "impact_equivalence",
+    "attacker_prerequisite_change",
+    "risk_change",
+    "risk_comparison",
+}
+RECORD_FIELDS = LEGACY_RECORD_FIELDS | RISK_FIELDS
+SEVERITIES = {"critical", "high", "moderate", "low", "none", "unknown"}
+SEVERITY_RANK = {"none": 0, "low": 1, "moderate": 2, "high": 3, "critical": 4}
+IMPACT_EQUIVALENCE = {
+    "same_or_greater",
+    "reduced",
+    "not_reached",
+    "different_issue",
+    "unproven",
+}
+PREREQUISITE_CHANGES = {"unchanged", "stricter", "looser", "different", "unproven"}
+RISK_CHANGES = {
+    "unchanged_or_higher",
+    "downgraded",
+    "not_reachable",
+    "different_issue",
+    "unproven",
 }
 
 
@@ -87,10 +117,12 @@ def validate_record(
         if not condition:
             errors.append(message)
 
-    missing, unknown = RECORD_FIELDS - set(record), set(record) - RECORD_FIELDS
+    schema_version = record.get("schema_version")
+    expected_fields = LEGACY_RECORD_FIELDS if schema_version == 1 else RECORD_FIELDS
+    missing, unknown = expected_fields - set(record), set(record) - expected_fields
     require(not missing, f"record missing fields: {', '.join(sorted(missing))}")
     require(not unknown, f"record has unknown fields: {', '.join(sorted(unknown))}")
-    require(record.get("schema_version") == 1, "schema_version must be 1")
+    require(schema_version in {1, 2}, "schema_version must be 1 or 2")
     require(record.get("target_id") == item["target_id"], "target_id mismatch")
     require(record.get("source") == "GHSA", "source must be GHSA")
     require(
@@ -117,10 +149,71 @@ def validate_record(
         "year-month mismatch",
     )
     require(nonempty(record.get("audited_at")), "audited_at is required")
-    require(record.get("current_status") in CURRENT_STATUSES, "invalid current_status")
+    allowed_statuses = LEGACY_CURRENT_STATUSES if schema_version == 1 else CURRENT_STATUSES
+    require(record.get("current_status") in allowed_statuses, "invalid current_status")
     require(record.get("proof_level") in PROOF_LEVELS, "invalid proof_level")
     for field in ("reported_root_cause", "attacker_boundary", "reasoning"):
         require(nonempty(record.get(field)), f"{field} is required")
+    if schema_version == 2:
+        reported_severity = record.get("reported_severity")
+        current_severity = record.get("current_severity")
+        impact_equivalence = record.get("impact_equivalence")
+        prerequisite_change = record.get("attacker_prerequisite_change")
+        risk_change = record.get("risk_change")
+        status = record.get("current_status")
+        require(
+            reported_severity == item.get("severity"),
+            "reported_severity must match the immutable input",
+        )
+        require(reported_severity in SEVERITIES - {"none", "unknown"}, "invalid reported_severity")
+        require(current_severity in SEVERITIES, "invalid current_severity")
+        require(nonempty(record.get("reported_impact")), "reported_impact is required")
+        require(nonempty(record.get("current_impact")), "current_impact is required")
+        require(impact_equivalence in IMPACT_EQUIVALENCE, "invalid impact_equivalence")
+        require(prerequisite_change in PREREQUISITE_CHANGES, "invalid attacker_prerequisite_change")
+        require(risk_change in RISK_CHANGES, "invalid risk_change")
+        require(nonempty(record.get("risk_comparison")), "risk_comparison is required")
+        if status in STILL_PRESENT or status == "fixed_default_but_present_on_maintained_release":
+            require(
+                impact_equivalence == "same_or_greater",
+                "reachable status requires the reported impact or greater",
+            )
+            require(
+                prerequisite_change in {"unchanged", "looser"},
+                "reachable status cannot require stricter attacker prerequisites",
+            )
+            require(
+                risk_change == "unchanged_or_higher",
+                "reachable status requires unchanged_or_higher risk",
+            )
+            if reported_severity in SEVERITY_RANK and current_severity in SEVERITY_RANK:
+                require(
+                    SEVERITY_RANK[current_severity] >= SEVERITY_RANK[reported_severity],
+                    "reachable status cannot lower current_severity",
+                )
+        elif status == "risk_downgraded_current_default":
+            require(risk_change == "downgraded", "downgraded status requires downgraded risk")
+            require(
+                impact_equivalence == "reduced"
+                or prerequisite_change in {"stricter", "different"},
+                "downgraded status requires reduced impact or stricter prerequisites",
+            )
+            if reported_severity in SEVERITY_RANK and current_severity in SEVERITY_RANK:
+                require(
+                    SEVERITY_RANK[current_severity] < SEVERITY_RANK[reported_severity],
+                    "downgraded status requires a lower current_severity",
+                )
+        elif status in {"fixed_current_default", "feature_removed_or_security_boundary_eliminated"}:
+            require(risk_change == "not_reachable", "fixed status requires not_reachable risk")
+            require(impact_equivalence == "not_reached", "fixed status requires not_reached impact")
+            require(current_severity == "none", "fixed status requires current_severity none")
+        elif status == "different_issue_only":
+            require(risk_change == "different_issue", "different issue status requires different_issue risk")
+            require(impact_equivalence == "different_issue", "different issue status requires different_issue impact")
+            require(current_severity == "none", "different issue status requires current_severity none")
+        elif status == "indeterminate":
+            require(risk_change == "unproven", "indeterminate status requires unproven risk")
+            require(current_severity == "unknown", "indeterminate status requires current_severity unknown")
     require(
         isinstance(record.get("equivalent_paths_checked"), list)
         and bool(record.get("equivalent_paths_checked")),

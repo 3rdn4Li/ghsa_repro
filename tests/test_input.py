@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -41,6 +42,25 @@ class InputTests(unittest.TestCase):
             source.write_text(json.dumps(value) + "\n" + json.dumps(value) + "\n")
             with self.assertRaisesRegex(ValueError, "duplicate GHSA"):
                 load_input(source)
+
+    def test_endpoint_can_be_resolved_without_persisting_its_value(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config_path = Path(temporary) / "config.json"
+            config = json.loads((ROOT / "config.daybreak.example.json").read_text())
+            config_path.write_text(json.dumps(config))
+            previous = os.environ.get("GPT_LITELLM_BASE_URL")
+            os.environ["GPT_LITELLM_BASE_URL"] = "https://endpoint.example.test/v1"
+            try:
+                loaded = load_config(config_path)
+            finally:
+                if previous is None:
+                    os.environ.pop("GPT_LITELLM_BASE_URL", None)
+                else:
+                    os.environ["GPT_LITELLM_BASE_URL"] = previous
+            public = loaded.public_dict()["provider"]
+            self.assertEqual(public["base_url_env"], "GPT_LITELLM_BASE_URL")
+            self.assertNotIn("base_url", public)
+            self.assertNotIn("endpoint.example.test", json.dumps(public))
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ from .github import fetch_advisory
 from .input import jsonl, load_input
 from .records import (
     FIXED_NOW,
+    RISK_DOWNGRADED,
     STILL_PRESENT,
     parse_envelope,
     preserve_dockerfile_inventory,
@@ -45,9 +46,24 @@ def initialize_run(
     run_root: Path,
     *,
     assumed_severity: str | None = None,
+    selected_targets: list[str] | None = None,
+    prior_record_sets: dict[str, Path] | None = None,
+    run_kind: str = "standard",
 ) -> dict[str, Any]:
     config = load_config(config_path)
     inputs = load_input(input_path, assumed_severity=assumed_severity)
+    if selected_targets:
+        requested = list(dict.fromkeys(selected_targets))
+        by_id = {record["ghsa_id"]: record for record in inputs}
+        unknown = sorted(set(requested) - set(by_id))
+        if unknown:
+            raise ValueError(f"selected targets are not in the input: {', '.join(unknown)}")
+        inputs = [by_id[target] for target in requested]
+    if run_kind not in {"standard", "impact_reassessment"}:
+        raise ValueError("unsupported run kind")
+    prior_record_sets = prior_record_sets or {}
+    if run_kind == "impact_reassessment" and not prior_record_sets:
+        raise ValueError("impact reassessment requires prior record sets")
     run_root = run_root.resolve()
     if run_root.exists() and any(run_root.iterdir()):
         raise FileExistsError(f"run directory is not empty: {run_root}")
@@ -83,25 +99,66 @@ def initialize_run(
         .read_text(encoding="utf-8")
     )
     immutable_text(run_root / "agent-envelope.schema.json", envelope)
+    for directory in (
+        paths.records,
+        paths.failures,
+        paths.targets,
+        paths.runtime,
+        paths.prior_records,
+    ):
+        directory.mkdir(mode=0o700, exist_ok=True)
+    prior_metadata = []
+    target_ids = {item["target_id"] for item in manifest}
+    for label, source in sorted(prior_record_sets.items()):
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", label):
+            raise ValueError(f"invalid prior record label: {label}")
+        source = source.resolve()
+        if not source.is_dir():
+            raise ValueError(f"prior record directory does not exist: {source}")
+        copied = 0
+        destination = paths.prior_records / label
+        destination.mkdir(mode=0o700, exist_ok=False)
+        for target_id in sorted(target_ids):
+            prior = source / f"{target_id}.json"
+            if not prior.is_file() or prior.is_symlink():
+                continue
+            value = read_object(prior)
+            if value.get("target_id") != target_id:
+                raise ValueError(f"prior record target mismatch: {prior}")
+            immutable_text(destination / prior.name, prior.read_text(encoding="utf-8"))
+            copied += 1
+        prior_metadata.append(
+            {"label": label, "source_directory": str(source), "copied_records": copied}
+        )
+    if run_kind == "impact_reassessment":
+        missing_prior = [
+            target_id
+            for target_id in sorted(target_ids)
+            if not any((paths.prior_records / label / f"{target_id}.json").is_file() for label in prior_record_sets)
+        ]
+        if missing_prior:
+            raise ValueError(
+                "impact reassessment targets lack prior records: " + ", ".join(missing_prior)
+            )
     immutable_text(
         paths.metadata,
         json.dumps(
             {
                 "schema_version": 1,
                 "created_at": selected_at,
+                "run_kind": run_kind,
                 "input_path": str(input_path.resolve()),
                 "input_sha256": sha256(input_path),
                 "config_path": str(config_path.resolve()),
                 "config_sha256": sha256(config_path),
                 "target_count": len(manifest),
+                "prior_record_sets": prior_metadata,
             },
             indent=2,
             sort_keys=True,
         )
         + "\n",
     )
-    for directory in (paths.records, paths.failures, paths.targets, paths.runtime):
-        directory.mkdir(mode=0o700, exist_ok=True)
     summary = summarize(paths, config)
     return {"run_root": str(run_root), "targets": len(manifest), "summary": summary}
 
@@ -136,7 +193,9 @@ def _package_hints(item: dict[str, Any]) -> str:
     )
 
 
-def render_prompt(item: dict[str, Any], attempt: int) -> str:
+def render_prompt(
+    item: dict[str, Any], attempt: int, prior_labels: list[str] | None = None
+) -> str:
     template = (
         files("ghsa_repro.resources")
         .joinpath("audit_prompt.md")
@@ -154,6 +213,15 @@ def render_prompt(item: dict[str, Any], attempt: int) -> str:
         "ADVISORY_YEAR_MONTH": item["advisory_year_month"],
         "ATTEMPT_DIR": attempt_dir,
         "RUNTIME_DIR": f"{attempt_dir}/runtime-tmp",
+        "PRIOR_AUDIT_CONTEXT": (
+            "This explicit impact-reassessment run includes prior model records at "
+            "`archived-inputs/prior-audits/`: "
+            + ", ".join(f"`{label}.json`" for label in sorted(prior_labels or []))
+            + ". Treat them only as advisory leads. Independently verify every claim against "
+            "current upstream and reproduction evidence; do not copy their verdict or severity."
+            if prior_labels
+            else "No prior model record is supplied for this standard audit."
+        ),
     }
     for key, value in values.items():
         template = template.replace("{{" + key + "}}", str(value))
@@ -209,10 +277,17 @@ def _stage_target(paths: RunPaths, config: RunConfig, item: dict[str, Any]) -> P
             "The full public advisory captured by the orchestrator is in `advisory.json`. "
             "Repository and commit resolution are audit work, not trusted input.\n",
         )
+    prior_paths = []
+    for source in sorted(paths.prior_records.glob(f"*/{item['target_id']}.json")):
+        label = source.parent.name
+        destination = target_root / "archived-inputs" / "prior-audits" / f"{label}.json"
+        if not destination.exists():
+            immutable_text(destination, source.read_text(encoding="utf-8"))
+        prior_paths.append(destination)
     inventory_path = target_root / "archived-inputs" / "inventory.json"
     if not inventory_path.exists():
         values = []
-        for path in (advisory_path, case_path, task_path):
+        for path in (advisory_path, case_path, task_path, *prior_paths):
             values.append(
                 {
                     "archived_path": str(path.relative_to(target_root)),
@@ -517,7 +592,13 @@ class AuditPipeline:
             envelope = attempt_root / "agent-envelope.json"
             stdout_path = attempt_root / "agent.stdout.log"
             stderr_path = attempt_root / "agent.stderr.log"
-            prompt = render_prompt(item, attempt)
+            prior_labels = [
+                path.stem
+                for path in sorted(
+                    (target_root / "archived-inputs" / "prior-audits").glob("*.json")
+                )
+            ]
+            prompt = render_prompt(item, attempt, prior_labels)
             command = codex_command(
                 self.config,
                 self.binary,
@@ -536,7 +617,8 @@ class AuditPipeline:
                     "cyber_access_program": self.config.codex.cyber_access_program,
                     "provider_id": self.config.provider.id,
                     "api_key_env": self.config.provider.api_key_env,
-                    "base_url": self.config.provider.base_url,
+                    "base_url": None if self.config.provider.base_url_env else self.config.provider.base_url,
+                    "base_url_env": self.config.provider.base_url_env,
                     "tls_verification": self.config.provider.tls_verify,
                     "runtime_root": str(runtime_root.relative_to(self.paths.root)),
                     "started_at": utcnow(),
@@ -761,6 +843,12 @@ def summarize(paths: RunPaths, config: RunConfig) -> dict[str, Any]:
     by_status = Counter(str(record.get("current_status")) for record in records)
     by_month = Counter(str(record.get("advisory_year_month")) for record in records)
     by_proof = Counter(str(record.get("proof_level")) for record in records)
+    by_risk_change = Counter(
+        str(record.get("risk_change", "legacy_unassessed")) for record in records
+    )
+    by_current_severity = Counter(
+        str(record.get("current_severity", "legacy_unassessed")) for record in records
+    )
     still = [
         record for record in records if record.get("current_status") in STILL_PRESENT
     ]
@@ -774,11 +862,15 @@ def summarize(paths: RunPaths, config: RunConfig) -> dict[str, Any]:
     indeterminate = [
         record for record in records if record.get("current_status") == "indeterminate"
     ]
+    downgraded = [
+        record for record in records if record.get("current_status") in RISK_DOWNGRADED
+    ]
     outputs = {
         "still-present.jsonl": still,
         "fixed-now.jsonl": fixed,
         "maintained-release-present.jsonl": maintained,
         "indeterminate.jsonl": indeterminate,
+        "risk-downgraded.jsonl": downgraded,
     }
     for name, values in outputs.items():
         atomic_text(paths.root / name, jsonl(values))
@@ -794,7 +886,10 @@ def summarize(paths: RunPaths, config: RunConfig) -> dict[str, Any]:
             "by_status": dict(sorted(by_status.items())),
             "by_year_month": dict(sorted(by_month.items())),
             "by_proof_level": dict(sorted(by_proof.items())),
+            "by_risk_change": dict(sorted(by_risk_change.items())),
+            "by_current_severity": dict(sorted(by_current_severity.items())),
             "still_vulnerable_now": len(still),
+            "risk_downgraded_now": len(downgraded),
             "fixed_default_but_present_on_maintained_release": len(maintained),
             "fixed_now": len(fixed),
             "indeterminate": len(indeterminate),

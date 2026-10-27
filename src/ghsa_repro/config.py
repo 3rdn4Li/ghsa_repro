@@ -17,6 +17,7 @@ class ProviderConfig:
     name: str
     model: str
     base_url: str
+    base_url_env: str | None
     api_key_env: str
     wire_api: str
     supports_output_schema: bool
@@ -45,9 +46,14 @@ class RunConfig:
 
     def public_dict(self) -> dict[str, object]:
         """Return the complete non-secret effective configuration."""
+        provider = vars(self.provider).copy()
+        if self.provider.base_url_env:
+            provider.pop("base_url")
+        else:
+            provider.pop("base_url_env")
         return {
             "schema_version": 1,
-            "provider": vars(self.provider),
+            "provider": provider,
             "codex": vars(self.codex),
             "github_token_env": self.github_token_env,
         }
@@ -100,13 +106,14 @@ def load_config(path: Path) -> RunConfig:
         "id",
         "name",
         "model",
-        "base_url",
         "api_key_env",
         "wire_api",
         "supports_output_schema",
         "tls_verify",
     }
     provider_optional = {
+        "base_url",
+        "base_url_env",
         "request_max_retries",
         "stream_max_retries",
         "stream_idle_timeout_ms",
@@ -115,7 +122,18 @@ def load_config(path: Path) -> RunConfig:
     provider_id = _string(provider["id"], "provider.id")
     if not PROVIDER_ID.fullmatch(provider_id):
         raise ValueError("provider.id must match ^[a-z][a-z0-9_-]*$")
-    base_url = _string(provider["base_url"], "provider.base_url").rstrip("/")
+    base_url_env_value = provider.get("base_url_env")
+    base_url_value = provider.get("base_url")
+    if bool(base_url_env_value) == bool(base_url_value):
+        raise ValueError("provider requires exactly one of base_url or base_url_env")
+    base_url_env = None
+    if base_url_env_value:
+        base_url_env = _string(base_url_env_value, "provider.base_url_env")
+        if not ENV_NAME.fullmatch(base_url_env):
+            raise ValueError("provider.base_url_env is not a valid environment variable name")
+        base_url = _string(os.environ.get(base_url_env), base_url_env).rstrip("/")
+    else:
+        base_url = _string(base_url_value, "provider.base_url").rstrip("/")
     parsed = urlsplit(base_url)
     if (
         parsed.scheme not in {"http", "https"}
@@ -143,6 +161,7 @@ def load_config(path: Path) -> RunConfig:
         name=_string(provider["name"], "provider.name"),
         model=_string(provider["model"], "provider.model"),
         base_url=base_url,
+        base_url_env=base_url_env,
         api_key_env=api_key_env,
         wire_api=wire_api,
         supports_output_schema=provider["supports_output_schema"],

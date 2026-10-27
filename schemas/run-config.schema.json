@@ -11,12 +11,17 @@
     "provider": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "model", "base_url", "api_key_env", "wire_api", "supports_output_schema", "tls_verify"],
+      "required": ["id", "name", "model", "api_key_env", "wire_api", "supports_output_schema", "tls_verify"],
+      "oneOf": [
+        {"required": ["base_url"], "not": {"required": ["base_url_env"]}},
+        {"required": ["base_url_env"], "not": {"required": ["base_url"]}}
+      ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
         "name": {"type": "string", "minLength": 1},
         "model": {"type": "string", "minLength": 1},
         "base_url": {"type": "string", "pattern": "^https?://"},
+        "base_url_env": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
         "api_key_env": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
         "wire_api": {"type": "string", "enum": ["chat", "responses"]},
         "supports_output_schema": {"type": "boolean"},

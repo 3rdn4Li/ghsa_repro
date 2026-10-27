@@ -127,6 +127,8 @@ Important fields:
 
 - `provider.model`: model sent to Codex
 - `provider.base_url`: OpenAI-compatible endpoint
+- `provider.base_url_env`: alternative to `base_url`; resolves the endpoint from an environment
+  variable without writing it into the run configuration or attempt metadata
 - `provider.api_key_env`: environment variable name, never the secret value
 - `provider.wire_api`: `chat` or `responses`
 - `provider.supports_output_schema`: set `false` for Chat Completions providers that reject
@@ -143,6 +145,12 @@ support. Always run `doctor` after changing either the provider or Codex version
 
 The full configuration contract is [`schemas/run-config.schema.json`](schemas/run-config.schema.json).
 Do not put credentials in this file.
+
+[`config.daybreak.example.json`](config.daybreak.example.json) is the non-secret Daybreak Blue
+profile. It reads both endpoint and key from `GPT_LITELLM_BASE_URL` and
+`GPT_LITELLM_API_KEY`, enables `daybreak_blue`, and permits a 48-worker run. Public OpenAI
+documentation does not currently specify this model alias, so use `doctor` and a one-target
+validation with the intended account before starting parallel work.
 
 ## Starting a run
 
@@ -180,6 +188,30 @@ ghsa-repro run \
 Completed valid targets are checked and skipped. Failed or invalid targets receive new bounded
 attempts on the next invocation. No restart discards a valid checkpoint.
 
+## Explicit impact reassessment
+
+Normal audits do not expose workers to earlier model conclusions. For a deliberate second-pass
+review, `init-reassessment` creates a separate immutable run and freezes named prior record sets
+as advisory-only evidence. This is useful when a first pass established a residual primitive but
+did not prove that current impact and attacker prerequisites remain equivalent to the advisory.
+
+```bash
+ghsa-repro init-reassessment \
+  --input inputs/reporting-queue.jsonl \
+  --config config.local.json \
+  --run-dir runs/reporting-impact-daybreak \
+  --target GHSA-xxxx-yyyy-zzzz \
+  --prior-record-set glm53=/absolute/path/to/glm-run/records \
+  --prior-record-set daybreak=/absolute/path/to/daybreak-run/records
+```
+
+The new record contract separately captures reported/current impact, current severity, attacker
+prerequisite changes, and overall risk change. A result cannot use a reachable status unless it
+demonstrates the original impact or greater under unchanged or weaker attacker prerequisites.
+Residual reachability with lower impact or stronger prerequisites must use
+`risk_downgraded_current_default` and assign a lower current severity. Prior records are never
+treated as proof; current upstream and reproduction evidence remain mandatory.
+
 ## Monitoring and outputs
 
 ```bash
@@ -205,6 +237,7 @@ runs/<name>/
   still-present.jsonl
   fixed-now.jsonl
   maintained-release-present.jsonl
+  risk-downgraded.jsonl
   indeterminate.jsonl
   state.json
 ```

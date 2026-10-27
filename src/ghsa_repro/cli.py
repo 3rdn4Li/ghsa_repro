@@ -47,6 +47,22 @@ def parser() -> argparse.ArgumentParser:
     initialize.add_argument("--run-dir", required=True, type=Path)
     initialize.add_argument("--assume-severity", choices=sorted(SEVERITIES))
 
+    reassess = commands.add_parser(
+        "init-reassessment",
+        help="create an explicit impact reassessment run with frozen prior records",
+    )
+    reassess.add_argument("--input", required=True, type=Path)
+    reassess.add_argument("--config", required=True, type=Path)
+    reassess.add_argument("--run-dir", required=True, type=Path)
+    reassess.add_argument("--assume-severity", choices=sorted(SEVERITIES))
+    reassess.add_argument("--target", action="append", required=True)
+    reassess.add_argument(
+        "--prior-record-set",
+        action="append",
+        required=True,
+        metavar="LABEL=RECORDS_DIR",
+    )
+
     run = commands.add_parser("run", help="resume pending targets in a run")
     run.add_argument("--run-dir", required=True, type=Path)
     run.add_argument("--jobs", type=int)
@@ -79,6 +95,18 @@ def _safe_run_root(value: Path) -> Path:
     ):
         raise ValueError(f"refusing unsafe run directory: {resolved}")
     return resolved
+
+
+def _prior_record_sets(values: list[str]) -> dict[str, Path]:
+    result = {}
+    for value in values:
+        label, separator, directory = value.partition("=")
+        if not separator or not label or not directory:
+            raise ValueError("--prior-record-set must be LABEL=RECORDS_DIR")
+        if label in result:
+            raise ValueError(f"duplicate prior record label: {label}")
+        result[label] = Path(directory)
+    return result
 
 
 def execute(args: argparse.Namespace) -> object:
@@ -116,6 +144,16 @@ def execute(args: argparse.Namespace) -> object:
             args.config,
             _safe_run_root(args.run_dir),
             assumed_severity=args.assume_severity,
+        )
+    if args.command == "init-reassessment":
+        return initialize_run(
+            args.input,
+            args.config,
+            _safe_run_root(args.run_dir),
+            assumed_severity=args.assume_severity,
+            selected_targets=args.target,
+            prior_record_sets=_prior_record_sets(args.prior_record_set),
+            run_kind="impact_reassessment",
         )
     paths, config, manifest = load_run(_safe_run_root(args.run_dir))
     if args.command == "run":

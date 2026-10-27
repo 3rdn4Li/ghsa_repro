@@ -94,6 +94,10 @@ class RunPaths:
         return self.root / "runtime"
 
     @property
+    def prior_records(self) -> Path:
+        return self.root / "prior-records"
+
+    @property
     def lock(self) -> Path:
         return self.root / "run.lock"
 
