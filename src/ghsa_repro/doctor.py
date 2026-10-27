@@ -123,7 +123,7 @@ def check(config: RunConfig) -> dict[str, object]:
                         "type": "object",
                         "additionalProperties": False,
                         "required": ["status"],
-                        "properties": {"status": {"const": "ok"}},
+                        "properties": {"status": {"type": "string", "const": "ok"}},
                     }
                 )
             )

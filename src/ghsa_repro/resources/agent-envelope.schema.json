@@ -5,7 +5,7 @@
   "required": ["target_id", "status", "record_path"],
   "properties": {
     "target_id": {"type": "string", "pattern": "^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$"},
-    "status": {"const": "completed"},
+    "status": {"type": "string", "const": "completed"},
     "record_path": {"type": "string", "pattern": "^attempts/[0-9]{2}/record\\.json$"}
   }
 }

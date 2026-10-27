@@ -14,7 +14,7 @@
     "stream_idle_timeout_ms": 900000
   },
   "codex": {
-    "binary": "node_modules/.bin/codex",
+    "binary": "codex",
     "max_jobs": 64,
     "default_jobs": 48,
     "timeout_seconds": 7200,
