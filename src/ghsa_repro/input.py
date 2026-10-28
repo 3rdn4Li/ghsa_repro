@@ -4,7 +4,7 @@ import csv
 import json
 import re
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +32,7 @@ def _nullable_string(value: object, field: str) -> str | None:
     return value.strip() or None
 
 
-def _published(value: object) -> str:
+def _published(value: object, assumed_timezone: str | None = None) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("published_at must be a non-empty RFC 3339 timestamp")
     text = value.strip()
@@ -41,7 +41,9 @@ def _published(value: object) -> str:
     except ValueError as error:
         raise ValueError("published_at must be an RFC 3339 timestamp") from error
     if parsed.tzinfo is None:
-        raise ValueError("published_at must include a timezone")
+        if assumed_timezone != "UTC":
+            raise ValueError("published_at must include a timezone")
+        return parsed.replace(tzinfo=timezone.utc).isoformat()
     return text
 
 
@@ -81,7 +83,10 @@ def _packages(value: object) -> list[dict[str, str | None]]:
 
 
 def validate_input_record(
-    value: object, *, assumed_severity: str | None = None
+    value: object,
+    *,
+    assumed_severity: str | None = None,
+    assumed_published_timezone: str | None = None,
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("input record must be a JSON object")
@@ -111,7 +116,9 @@ def validate_input_record(
         "schema_version": 1,
         "ghsa_id": ghsa_id,
         "cve_id": cve_id,
-        "published_at": _published(value.get("published_at")),
+        "published_at": _published(
+            value.get("published_at"), assumed_published_timezone
+        ),
         "severity": severity,
         "summary": summary,
         "cvss_vector": _nullable_string(value.get("cvss_vector"), "cvss_vector"),
@@ -144,7 +151,11 @@ def _legacy_package(value: str | None) -> list[dict[str, str | None]]:
     ]
 
 
-def _csv_records(path: Path, assumed_severity: str | None) -> Iterable[dict[str, Any]]:
+def _csv_records(
+    path: Path,
+    assumed_severity: str | None,
+    assumed_published_timezone: str | None,
+) -> Iterable[dict[str, Any]]:
     with path.open(newline="", encoding="utf-8") as stream:
         reader = csv.DictReader(stream)
         required = {"ghsa_id", "summary"}
@@ -173,19 +184,30 @@ def _csv_records(path: Path, assumed_severity: str | None) -> Iterable[dict[str,
                 "packages": packages,
             }
             try:
-                yield validate_input_record(value, assumed_severity=assumed_severity)
+                yield validate_input_record(
+                    value,
+                    assumed_severity=assumed_severity,
+                    assumed_published_timezone=assumed_published_timezone,
+                )
             except ValueError as error:
                 raise ValueError(f"CSV line {number}: {error}") from error
 
 
 def load_input(
-    path: Path, *, assumed_severity: str | None = None
+    path: Path,
+    *,
+    assumed_severity: str | None = None,
+    assumed_published_timezone: str | None = None,
 ) -> list[dict[str, Any]]:
     if assumed_severity is not None and assumed_severity not in SEVERITIES:
         raise ValueError("assumed severity must be low, moderate, high, or critical")
+    if assumed_published_timezone not in {None, "UTC"}:
+        raise ValueError("assumed published timezone must be UTC")
     records = []
     if path.suffix.lower() == ".csv":
-        records.extend(_csv_records(path, assumed_severity))
+        records.extend(
+            _csv_records(path, assumed_severity, assumed_published_timezone)
+        )
     else:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if not line.strip():
@@ -193,7 +215,9 @@ def load_input(
             try:
                 records.append(
                     validate_input_record(
-                        json.loads(line), assumed_severity=assumed_severity
+                        json.loads(line),
+                        assumed_severity=assumed_severity,
+                        assumed_published_timezone=assumed_published_timezone,
                     )
                 )
             except (json.JSONDecodeError, ValueError) as error:

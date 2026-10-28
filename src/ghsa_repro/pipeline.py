@@ -97,12 +97,17 @@ def initialize_run(
     run_root: Path,
     *,
     assumed_severity: str | None = None,
+    assumed_published_timezone: str | None = None,
     selected_targets: list[str] | None = None,
     prior_record_sets: dict[str, Path] | None = None,
     run_kind: str = "standard",
 ) -> dict[str, Any]:
     config = load_config(config_path)
-    inputs = load_input(input_path, assumed_severity=assumed_severity)
+    inputs = load_input(
+        input_path,
+        assumed_severity=assumed_severity,
+        assumed_published_timezone=assumed_published_timezone,
+    )
     if selected_targets:
         requested = list(dict.fromkeys(selected_targets))
         by_id = {record["ghsa_id"]: record for record in inputs}
@@ -215,6 +220,8 @@ def initialize_run(
                 "config_path": str(config_path.resolve()),
                 "config_sha256": sha256(config_path),
                 "target_count": len(manifest),
+                "assumed_severity": assumed_severity,
+                "assumed_published_timezone": assumed_published_timezone,
                 "prior_record_sets": prior_metadata,
             },
             indent=2,

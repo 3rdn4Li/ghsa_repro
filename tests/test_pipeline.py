@@ -83,6 +83,24 @@ class PipelineTests(unittest.TestCase):
                     ROOT / "examples/input.jsonl", ROOT / "config.example.json", run
                 )
 
+    def test_standard_init_can_select_targets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary)
+            source = temporary / "input.jsonl"
+            first = json.loads((ROOT / "examples/input.jsonl").read_text())
+            second = {**first, "ghsa_id": "GHSA-1111-2222-3333"}
+            source.write_text(json.dumps(first) + "\n" + json.dumps(second) + "\n")
+            run = temporary / "selected"
+            result = initialize_run(
+                source,
+                ROOT / "config.example.json",
+                run,
+                selected_targets=[second["ghsa_id"]],
+            )
+            self.assertEqual(result["targets"], 1)
+            manifest = [json.loads(line) for line in (run / "manifest.jsonl").read_text().splitlines()]
+            self.assertEqual([item["target_id"] for item in manifest], [second["ghsa_id"]])
+
     def test_prompt_is_year_agnostic(self):
         item = {
             "target_id": "GHSA-abcd-1234-efgh",

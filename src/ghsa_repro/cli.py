@@ -40,12 +40,15 @@ def parser() -> argparse.ArgumentParser:
     )
     validate.add_argument("input", type=Path)
     validate.add_argument("--assume-severity", choices=sorted(SEVERITIES))
+    validate.add_argument("--assume-published-timezone", choices=["UTC"])
 
     initialize = commands.add_parser("init", help="create an immutable resumable run")
     initialize.add_argument("--input", required=True, type=Path)
     initialize.add_argument("--config", required=True, type=Path)
     initialize.add_argument("--run-dir", required=True, type=Path)
     initialize.add_argument("--assume-severity", choices=sorted(SEVERITIES))
+    initialize.add_argument("--assume-published-timezone", choices=["UTC"])
+    initialize.add_argument("--target", action="append", default=[])
 
     reassess = commands.add_parser(
         "init-reassessment",
@@ -55,6 +58,7 @@ def parser() -> argparse.ArgumentParser:
     reassess.add_argument("--config", required=True, type=Path)
     reassess.add_argument("--run-dir", required=True, type=Path)
     reassess.add_argument("--assume-severity", choices=sorted(SEVERITIES))
+    reassess.add_argument("--assume-published-timezone", choices=["UTC"])
     reassess.add_argument("--target", action="append", required=True)
     reassess.add_argument(
         "--prior-record-set",
@@ -132,7 +136,11 @@ def execute(args: argparse.Namespace) -> object:
             "targets": len(records),
         }
     if args.command == "validate-input":
-        records = load_input(args.input, assumed_severity=args.assume_severity)
+        records = load_input(
+            args.input,
+            assumed_severity=args.assume_severity,
+            assumed_published_timezone=args.assume_published_timezone,
+        )
         return {
             "input": str(args.input.resolve()),
             "targets": len(records),
@@ -144,6 +152,8 @@ def execute(args: argparse.Namespace) -> object:
             args.config,
             _safe_run_root(args.run_dir),
             assumed_severity=args.assume_severity,
+            assumed_published_timezone=args.assume_published_timezone,
+            selected_targets=args.target,
         )
     if args.command == "init-reassessment":
         return initialize_run(
@@ -151,6 +161,7 @@ def execute(args: argparse.Namespace) -> object:
             args.config,
             _safe_run_root(args.run_dir),
             assumed_severity=args.assume_severity,
+            assumed_published_timezone=args.assume_published_timezone,
             selected_targets=args.target,
             prior_record_sets=_prior_record_sets(args.prior_record_set),
             run_kind="impact_reassessment",

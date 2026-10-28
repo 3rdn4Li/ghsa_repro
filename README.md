@@ -167,6 +167,11 @@ ghsa-repro init \
   --run-dir runs/2023-critical-glm53
 ```
 
+Use repeated `--target GHSA-...` arguments to initialize a traceable continuation containing
+only explicitly selected targets. Inputs with legacy timezone-naive publication timestamps remain
+invalid unless the caller explicitly supplies `--assume-published-timezone UTC`; that assumption is
+recorded in `input-metadata.json`.
+
 First validate one real target:
 
 ```bash

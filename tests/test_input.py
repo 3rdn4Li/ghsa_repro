@@ -33,6 +33,18 @@ class InputTests(unittest.TestCase):
         self.assertEqual(records[0]["packages"][0]["ecosystem"], "npm")
         self.assertEqual(records[0]["packages"][0]["name"], "demo")
 
+    def test_naive_published_time_requires_explicit_utc_assumption(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "input.csv"
+            source.write_text(
+                "ghsa_id,published,summary,severity\n"
+                "GHSA-abcd-1234-efgh,2024-01-02 03:04:05,Example,critical\n"
+            )
+            with self.assertRaisesRegex(ValueError, "must include a timezone"):
+                load_input(source)
+            records = load_input(source, assumed_published_timezone="UTC")
+        self.assertEqual(records[0]["published_at"], "2024-01-02T03:04:05+00:00")
+
     def test_duplicates_and_unknown_fields_fail_closed(self):
         value = json.loads((ROOT / "examples/input.jsonl").read_text())
         with self.assertRaisesRegex(ValueError, "unknown fields"):
