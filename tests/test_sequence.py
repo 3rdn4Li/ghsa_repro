@@ -32,7 +32,7 @@ class SequenceTests(unittest.TestCase):
             self.assertEqual(result["current_run"], str(first.resolve()))
             self.assertEqual(load_run.call_count, 1)
             pipeline_class.return_value.run.assert_called_once_with(
-                jobs=48, timeout_seconds=7200
+                jobs=48, timeout_seconds=7200, target_ids=[]
             )
 
     def test_rejects_duplicate_runs(self):

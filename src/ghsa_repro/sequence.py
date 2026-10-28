@@ -64,6 +64,7 @@ def run_sequence(
         result = pipeline.run(
             jobs=jobs or config.codex.default_jobs,
             timeout_seconds=timeout_seconds or config.codex.timeout_seconds,
+            target_ids=[],
         )
         after = result["summary"]
         entry.update(
