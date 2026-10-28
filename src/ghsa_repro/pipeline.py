@@ -692,12 +692,78 @@ class AuditPipeline:
         except (OSError, ValueError, KeyError, json.JSONDecodeError):
             return False
 
+    def _select_attempt(
+        self, item: dict[str, Any], attempt_root: Path, record: dict[str, Any]
+    ) -> None:
+        target_id = item["target_id"]
+        canonical = self.paths.records / f"{target_id}.json"
+        atomic_json(canonical, record)
+        atomic_json(
+            self.paths.targets / target_id / "selected-attempt.json",
+            {
+                "selected_at": utcnow(),
+                "attempt": int(attempt_root.name),
+                "attempt_dir": str(
+                    attempt_root.relative_to(self.paths.targets / target_id)
+                ),
+                "record": str(canonical.relative_to(self.paths.root)),
+            },
+        )
+        _publish_record(self.paths, record)
+        (self.paths.failures / f"{target_id}.json").unlink(missing_ok=True)
+        with self.write_lock:
+            summarize(self.paths, self.config)
+
+    def _recover_valid_attempt(self, item: dict[str, Any]) -> dict[str, Any] | None:
+        """Promote a finished prior attempt that passes the current contract.
+
+        This supports validator corrections without spending another model call.  The
+        model process must have exited successfully and produced the exact structured
+        completion envelope; the record and artifacts are then revalidated against the
+        current implementation before they become a checkpoint.
+        """
+        target_id = item["target_id"]
+        attempts = self.paths.targets / target_id / "attempts"
+        candidates = sorted(
+            (path for path in attempts.glob("[0-9][0-9]") if path.is_dir()),
+            reverse=True,
+        )
+        for attempt_root in candidates:
+            try:
+                validation = read_object(attempt_root / "validation.json")
+                if validation.get("returncode") != 0:
+                    continue
+                output = parse_envelope(attempt_root / "agent-envelope.json")
+                expected_path = f"attempts/{int(attempt_root.name):02d}/record.json"
+                if output != {
+                    "target_id": target_id,
+                    "status": "completed",
+                    "record_path": expected_path,
+                }:
+                    continue
+                record = read_object(attempt_root / "record.json")
+                if validate_record(record, item, attempt_root):
+                    continue
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            self._select_attempt(item, attempt_root, record)
+            return {
+                "target_id": target_id,
+                "outcome": "prior_attempt_recovered",
+                "status": record["current_status"],
+                "attempt": int(attempt_root.name),
+            }
+        return None
+
     def _audit_one(
         self, item: dict[str, Any], timeout_seconds: int, base_url: str | None
     ) -> dict[str, Any]:
         target_id = item["target_id"]
         if self._checkpoint_valid(item):
             return {"target_id": target_id, "outcome": "checkpoint_reused"}
+        recovered = self._recover_valid_attempt(item)
+        if recovered is not None:
+            return recovered
         target_root = _stage_target(self.paths, self.config, item)
         prior = [
             int(path.name)
@@ -795,21 +861,7 @@ class AuditPipeline:
             atomic_json(attempt_root / "validation.json", attempt_result)
             pass_history.append(attempt_result)
             if not errors and record is not None:
-                canonical = self.paths.records / f"{target_id}.json"
-                atomic_json(canonical, record)
-                atomic_json(
-                    target_root / "selected-attempt.json",
-                    {
-                        "selected_at": utcnow(),
-                        "attempt": attempt,
-                        "attempt_dir": str(attempt_root.relative_to(target_root)),
-                        "record": str(canonical.relative_to(self.paths.root)),
-                    },
-                )
-                _publish_record(self.paths, record)
-                (self.paths.failures / f"{target_id}.json").unlink(missing_ok=True)
-                with self.write_lock:
-                    summarize(self.paths, self.config)
+                self._select_attempt(item, attempt_root, record)
                 return {
                     "target_id": target_id,
                     "outcome": "completed",

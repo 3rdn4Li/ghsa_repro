@@ -3,9 +3,11 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import Mock
 
 from ghsa_repro.config import load_config
 from ghsa_repro.pipeline import (
+    AuditPipeline,
     _publish_record,
     codex_command,
     initialize_run,
@@ -127,7 +129,8 @@ class PipelineTests(unittest.TestCase):
             "severity": "critical",
         }
         with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / item["target_id"]
+            run_paths = RunPaths(Path(temporary))
+            target = run_paths.targets / item["target_id"]
             attempt = target / "attempts/01"
             for relative in (
                 "artifacts/README.md",
@@ -206,6 +209,31 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(validate_record(record, item, attempt), [])
             record["current_status"] = "fixed_current_default"
             record["maintained_branches_examined"] = []
+            (attempt / "record.json").write_text(json.dumps(record))
+            (attempt / "agent-envelope.json").write_text(
+                json.dumps(
+                    {
+                        "target_id": item["target_id"],
+                        "status": "completed",
+                        "record_path": "attempts/01/record.json",
+                    }
+                )
+            )
+            (attempt / "validation.json").write_text(
+                json.dumps(
+                    {
+                        "returncode": 0,
+                        "errors": ["rejected by an older validator contract"],
+                    }
+                )
+            )
+            pipeline = object.__new__(AuditPipeline)
+            pipeline.paths = run_paths
+            pipeline._select_attempt = Mock()
+            recovered = pipeline._recover_valid_attempt(item)
+            self.assertEqual(recovered["outcome"], "prior_attempt_recovered")
+            self.assertEqual(recovered["attempt"], 1)
+            pipeline._select_attempt.assert_called_once_with(item, attempt, record)
             record["current_impact"] = "not reachable; sk-examplecredential0123456789"
             paths = RunPaths(Path(temporary) / "publication-run")
             _publish_record(paths, record)
