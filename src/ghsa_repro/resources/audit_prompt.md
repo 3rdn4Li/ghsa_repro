@@ -145,11 +145,15 @@ Write `record.json` with exactly these semantic fields:
 - `artifact_root`: `{{ATTEMPT_DIR}}/artifacts`
 - `reasoning`: concise nonempty explanation tied to the same root cause, boundary, and impact
 
-Status consistency is mandatory: reachable statuses require `same_or_greater` impact,
-unchanged/weaker prerequisites, `unchanged_or_higher` risk, and a current severity no lower
-than the reported severity. `risk_downgraded_current_default` requires downgraded risk and a
-lower current severity. Fixed/removed statuses require `not_reachable`, `not_reached`, and
-severity `none`; indeterminate requires unproven risk and severity `unknown`.
+Status consistency is mandatory: current-default reachable statuses require
+`same_or_greater` impact, unchanged/weaker prerequisites, `unchanged_or_higher` risk, and a
+current severity no lower than the reported severity.
+`fixed_default_but_present_on_maintained_release` describes a fixed current default: use
+`not_reachable`, `not_reached`, and severity `none`, and document the affected maintained
+release in `maintained_branches_examined`. `risk_downgraded_current_default` requires
+downgraded risk and a lower current severity. Other fixed/removed statuses likewise require
+`not_reachable`, `not_reached`, and severity `none`; indeterminate requires unproven risk and
+severity `unknown`.
 
 Use `proof_level: executable` only when the exact current commit was built/run and the
 claimed behavior was observed through the production entry path. Use `indeterminate`

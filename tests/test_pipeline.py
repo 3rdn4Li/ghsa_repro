@@ -193,6 +193,19 @@ class PipelineTests(unittest.TestCase):
                 "reasoning": "evidence supports fix",
             }
             self.assertEqual(validate_record(record, item, attempt), [])
+            record["current_status"] = "fixed_default_but_present_on_maintained_release"
+            record["maintained_branches_examined"] = [
+                {
+                    "ref": "refs/heads/release-1.x",
+                    "commit": "b" * 40,
+                    "maintenance_evidence": "maintained release line",
+                    "status": "same_root_cause_present",
+                    "finding": "same vulnerability remains reachable",
+                }
+            ]
+            self.assertEqual(validate_record(record, item, attempt), [])
+            record["current_status"] = "fixed_current_default"
+            record["maintained_branches_examined"] = []
             record["current_impact"] = "not reachable; sk-examplecredential0123456789"
             paths = RunPaths(Path(temporary) / "publication-run")
             _publish_record(paths, record)

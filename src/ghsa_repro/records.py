@@ -173,7 +173,7 @@ def validate_record(
         require(prerequisite_change in PREREQUISITE_CHANGES, "invalid attacker_prerequisite_change")
         require(risk_change in RISK_CHANGES, "invalid risk_change")
         require(nonempty(record.get("risk_comparison")), "risk_comparison is required")
-        if status in STILL_PRESENT or status == "fixed_default_but_present_on_maintained_release":
+        if status in STILL_PRESENT:
             require(
                 impact_equivalence == "same_or_greater",
                 "reachable status requires the reported impact or greater",
@@ -203,7 +203,11 @@ def validate_record(
                     SEVERITY_RANK[current_severity] < SEVERITY_RANK[reported_severity],
                     "downgraded status requires a lower current_severity",
                 )
-        elif status in {"fixed_current_default", "feature_removed_or_security_boundary_eliminated"}:
+        elif status in {
+            "fixed_current_default",
+            "fixed_default_but_present_on_maintained_release",
+            "feature_removed_or_security_boundary_eliminated",
+        }:
             require(risk_change == "not_reachable", "fixed status requires not_reachable risk")
             require(impact_equivalence == "not_reached", "fixed status requires not_reached impact")
             require(current_severity == "none", "fixed status requires current_severity none")
