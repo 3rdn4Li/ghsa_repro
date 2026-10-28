@@ -196,6 +196,22 @@ ghsa-repro run \
 Completed valid targets are checked and skipped. Failed or invalid targets receive new bounded
 attempts on the next invocation. No restart discards a valid checkpoint.
 
+For an ordered multi-run campaign, use the maintained sequence entry point. It runs one bounded
+pass on the first incomplete run and advances only when that run has a valid record for every
+target. If failures remain, the command records `stopped_incomplete` and exits without starting
+the next run; invoke the same command later to resume from that run.
+
+```bash
+ghsa-repro run-sequence \
+  --state-file runs/critical-daybreak-sequence.json \
+  --run-dir runs/2024-critical-daybreak \
+  --run-dir runs/2023-critical-daybreak \
+  --run-dir runs/2022-critical-daybreak \
+  --jobs 48 \
+  --timeout-seconds 7200 \
+  --acknowledge-local-security-risk
+```
+
 ## Explicit impact reassessment
 
 Normal audits do not expose workers to earlier model conclusions. For a deliberate second-pass

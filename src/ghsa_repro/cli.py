@@ -11,6 +11,7 @@ from .doctor import check
 from .github import collect_published_year
 from .input import SEVERITIES, jsonl, load_input
 from .pipeline import AuditPipeline, initialize_run, load_run, monitor, summarize
+from .sequence import run_sequence
 from .storage import atomic_text
 
 
@@ -73,6 +74,20 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--timeout-seconds", type=int)
     run.add_argument("--target", action="append", default=[])
     run.add_argument(
+        "--acknowledge-local-security-risk",
+        action="store_true",
+        help="required: agents execute untrusted reproduction work with host access",
+    )
+
+    sequence = commands.add_parser(
+        "run-sequence",
+        help="resume ordered runs and advance only after the current run is complete",
+    )
+    sequence.add_argument("--run-dir", action="append", required=True, type=Path)
+    sequence.add_argument("--state-file", required=True, type=Path)
+    sequence.add_argument("--jobs", type=int)
+    sequence.add_argument("--timeout-seconds", type=int)
+    sequence.add_argument(
         "--acknowledge-local-security-risk",
         action="store_true",
         help="required: agents execute untrusted reproduction work with host access",
@@ -165,6 +180,15 @@ def execute(args: argparse.Namespace) -> object:
             selected_targets=args.target,
             prior_record_sets=_prior_record_sets(args.prior_record_set),
             run_kind="impact_reassessment",
+        )
+    if args.command == "run-sequence":
+        if not args.acknowledge_local_security_risk:
+            raise ValueError("run-sequence requires --acknowledge-local-security-risk")
+        return run_sequence(
+            [_safe_run_root(path) for path in args.run_dir],
+            args.state_file,
+            jobs=args.jobs,
+            timeout_seconds=args.timeout_seconds,
         )
     paths, config, manifest = load_run(_safe_run_root(args.run_dir))
     if args.command == "run":
