@@ -241,6 +241,9 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(publication.stat().st_mode & 0o777, 0o644)
             self.assertNotIn("sk-examplecredential", publication.read_text())
             self.assertNotIn("reproduction", json.loads(publication.read_text()))
+            self.assertIn(
+                "maintained_branches_examined", json.loads(publication.read_text())
+            )
             record["current_source_evidence"][0]["commit"] = "b" * 40
             self.assertIn(
                 "source evidence must bind to the current-default commit",

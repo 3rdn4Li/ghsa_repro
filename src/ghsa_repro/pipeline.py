@@ -391,6 +391,7 @@ def _publish_record(paths: RunPaths, record: dict[str, Any]) -> None:
         "repository",
         "audited_at",
         "current_default",
+        "maintained_branches_examined",
         "reported_root_cause",
         "attacker_boundary",
         "reported_severity",
@@ -1018,6 +1019,8 @@ def _valid_records(
 def summarize(paths: RunPaths, config: RunConfig) -> dict[str, Any]:
     manifest = load_manifest(paths.manifest)
     records, invalid = _valid_records(paths, manifest)
+    for record in records:
+        _publish_record(paths, record)
     failures = sorted(path.stem for path in paths.failures.glob("GHSA-*.json"))
     by_status = Counter(str(record.get("current_status")) for record in records)
     by_month = Counter(str(record.get("advisory_year_month")) for record in records)
