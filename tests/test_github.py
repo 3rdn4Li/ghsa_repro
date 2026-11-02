@@ -1,7 +1,8 @@
 import json
 import unittest
+from unittest.mock import patch
 
-from ghsa_repro.github import collect_published_year
+from ghsa_repro.github import collect_advisories, collect_published_year
 
 
 class Response:
@@ -20,6 +21,33 @@ class Response:
 
 
 class GithubTests(unittest.TestCase):
+    def test_explicit_collection_preserves_order_and_deduplicates(self):
+        def fetch(ghsa_id, token_env):
+            self.assertEqual(token_env, "TEST_TOKEN")
+            return {
+                "ghsa_id": ghsa_id,
+                "cve_id": None,
+                "published_at": "2026-01-01T00:00:00Z",
+                "severity": "critical",
+                "summary": ghsa_id,
+                "html_url": f"https://github.com/advisories/{ghsa_id}",
+                "cvss": {},
+                "withdrawn_at": None,
+                "vulnerabilities": [],
+            }, None
+
+        ids = ["GHSA-abcd-1234-efgh", "GHSA-1111-2222-3333"]
+        with patch("ghsa_repro.github.fetch_advisory", side_effect=fetch):
+            records = collect_advisories(ids + ids[:1], token_env="TEST_TOKEN")
+        self.assertEqual([record["ghsa_id"] for record in records], ids)
+
+    def test_explicit_collection_fails_atomically_on_fetch_error(self):
+        with patch(
+            "ghsa_repro.github.fetch_advisory",
+            return_value=(None, "GitHub Advisory API returned HTTP 404"),
+        ), self.assertRaisesRegex(RuntimeError, "GHSA-abcd-1234-efgh"):
+            collect_advisories(["GHSA-abcd-1234-efgh"])
+
     def test_collection_paginates_and_excludes_withdrawn(self):
         pages = [
             Response(

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config import load_config
 from .doctor import check
-from .github import collect_published_year
+from .github import collect_advisories, collect_published_year
 from .input import SEVERITIES, jsonl, load_input
 from .pipeline import AuditPipeline, initialize_run, load_run, monitor, summarize
 from .sequence import run_sequence
@@ -29,9 +29,16 @@ def parser() -> argparse.ArgumentParser:
     doctor.add_argument("--codex-binary", help="override codex.binary for this check")
 
     collect = commands.add_parser(
-        "collect", help="collect reviewed advisories by publication year"
+        "collect", help="collect canonical reviewed-advisory inputs"
     )
-    collect.add_argument("--year", required=True, type=int)
+    selection = collect.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--year", type=int)
+    selection.add_argument(
+        "--ghsa-id",
+        action="append",
+        dest="ghsa_ids",
+        help="collect one explicit GHSA ID; repeat for multiple advisories",
+    )
     collect.add_argument("--severity", choices=sorted(SEVERITIES), default="critical")
     collect.add_argument("--output", required=True, type=Path)
     collect.add_argument("--github-token-env", default="GH_TOKEN")
@@ -139,17 +146,29 @@ def execute(args: argparse.Namespace) -> object:
     if args.command == "collect":
         if args.output.exists():
             raise FileExistsError(f"refusing to overwrite input: {args.output}")
-        records = collect_published_year(
-            args.year, args.severity, token_env=args.github_token_env
+        records = (
+            collect_advisories(args.ghsa_ids, token_env=args.github_token_env)
+            if args.ghsa_ids
+            else collect_published_year(
+                args.year, args.severity, token_env=args.github_token_env
+            )
         )
         atomic_text(args.output, jsonl(records), mode=0o644)
-        return {
+        result = {
             "output": str(args.output.resolve()),
-            "year_basis": "published_at",
-            "year": args.year,
-            "severity": args.severity,
             "targets": len(records),
         }
+        if args.ghsa_ids:
+            result["selection"] = "explicit_ghsa_ids"
+        else:
+            result.update(
+                {
+                    "year_basis": "published_at",
+                    "year": args.year,
+                    "severity": args.severity,
+                }
+            )
+        return result
     if args.command == "validate-input":
         records = load_input(
             args.input,

@@ -109,6 +109,19 @@ Repeat with `--year 2022` for 2022. For a custom selection policy—including CV
 produce JSONL matching the canonical schema and run `validate-input`; the audit stages remain
 identical.
 
+For an explicit, traceable GHSA selection such as an impact-review continuation, collect the
+canonical advisory inputs directly instead of manually assembling a queue:
+
+```bash
+ghsa-repro collect \
+  --ghsa-id GHSA-xxxx-yyyy-zzzz \
+  --ghsa-id GHSA-1111-2222-3333 \
+  --output inputs/impact-continuation.jsonl
+```
+
+Explicit collection preserves the requested order, removes duplicate IDs, rejects withdrawn
+advisories, and writes nothing unless every advisory is fetched and validated successfully.
+
 ## Model configuration
 
 Copy [`config.example.json`](config.example.json) and edit only non-secret settings. The checked-in

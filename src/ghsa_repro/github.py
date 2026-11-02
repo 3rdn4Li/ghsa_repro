@@ -130,3 +130,21 @@ def collect_published_year(
                 records.append(_record(advisory))
     unique = {record["ghsa_id"]: record for record in records}
     return [unique[key] for key in sorted(unique)]
+
+
+def collect_advisories(
+    ghsa_ids: list[str], *, token_env: str = "GH_TOKEN"
+) -> list[dict[str, object]]:
+    """Fetch an explicit, deduplicated GHSA selection as canonical inputs."""
+    requested = list(dict.fromkeys(ghsa_ids))
+    if not requested:
+        raise ValueError("at least one GHSA ID is required")
+    records = []
+    for ghsa_id in requested:
+        advisory, error = fetch_advisory(ghsa_id, token_env)
+        if advisory is None:
+            raise RuntimeError(f"unable to collect {ghsa_id}: {error}")
+        if advisory.get("withdrawn_at"):
+            raise ValueError(f"refusing withdrawn advisory: {ghsa_id}")
+        records.append(_record(advisory))
+    return records
