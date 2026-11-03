@@ -25,7 +25,9 @@ source checkouts, PoCs, model responses, and credentials are ignored by Git unde
 - Git and Docker for targets that require them
 - A compatible Codex CLI with `codex exec`, custom model-provider configuration, structured
   output schemas, and the configured wire API
-- Optional `GH_TOKEN` for reliable GitHub Advisory API access
+- Optional `GH_TOKEN` for reliable GitHub Advisory API access by the orchestrator. It is
+  deliberately excluded from audit worker environments; workers use the immutable advisory
+  snapshot, Git transport, and public primary HTML for source history.
 - A model endpoint suitable and authorized for defensive vulnerability analysis
 
 Install from a clone:
@@ -286,6 +288,12 @@ runs/<name>/
 ```
 
 The canonical output contract is [`schemas/audit-record.schema.json`](schemas/audit-record.schema.json).
+For an authoritative, resolvable Git upstream, records still require an exact current ref,
+40-character commit, and source evidence bound to that commit. Registry-only packages, removed
+malicious packages, deleted repositories, and registry security-holder replacements may instead
+use `null` for the unavailable repository/current default and for non-Git evidence or fix commits.
+Those records must retain nonempty primary registry/advisory evidence and explain why no Git fact
+exists; `null` is not accepted as a shortcut for a resolvable repository.
 `proof_level: executable` is accepted only when required PoC logs exist and evidence is bound to the
 exact current-default commit. Model success alone never creates a canonical record.
 

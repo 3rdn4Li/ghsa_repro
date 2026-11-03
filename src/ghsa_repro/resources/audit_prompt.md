@@ -16,6 +16,10 @@ Nothing is pre-resolved. The GitHub advisory captured by the orchestrator is at
 input row. Treat all of `archived-inputs/` as immutable. If `advisory.json` records a
 fetch error, retrieve the public advisory yourself and save it under
 `{{ATTEMPT_DIR}}/artifacts/evidence/`, not under `archived-inputs/`.
+Do not make anonymous GitHub REST API requests. Use the captured advisory and
+resolve public refs and history through Git transport (`git ls-remote`, fetch,
+and clone) plus primary public HTML when necessary. No host GitHub credential is
+available to the worker; never search for, print, or persist one.
 
 {{PRIOR_AUDIT_CONTEXT}}
 
@@ -23,6 +27,31 @@ Discover the authoritative upstream repository from primary advisory or package
 evidence. Never substitute a fork or unofficial mirror. Establish the proposed fixed
 commit and best-supported recorded vulnerable commit when possible, using exact
 40-character SHAs. Reconstruct the reported root cause, attacker boundary, and impact.
+
+Some advisories describe registry-only packages, removed malicious packages, deleted
+repositories, or packages replaced by a registry security holder. Handle those cases
+explicitly instead of inventing a repository or commit:
+
+- If an authoritative current Git repository and default ref exist, `repository` must be
+  its HTTPS URL, `current_default` must contain the exact ref and 40-character commit, and
+  at least one source-evidence entry must bind to that commit.
+- If no authoritative current Git repository exists after checking primary advisory and
+  package metadata, set `repository` and `current_default` to `null`. Do not substitute
+  GitHub Advisory Database, a fork, a mirror, or npm's generic `security-holder` repository
+  as the affected project's upstream.
+- Keep `current_source_evidence` nonempty in repository-unavailable cases. Use primary
+  registry metadata, package tarball responses, the captured advisory, or authoritative
+  removal/deprecation evidence; set each non-Git evidence entry's `commit` to `null`.
+- A removed package or registry security-holder replacement can eliminate the current
+  public installation boundary, but it is not a source-level patch. State exactly what the
+  registry currently serves, use `proposed_fixed_commit: null`, and do not claim a Git fix.
+- `earliest_complete_current_fix.commit` may be `null` when the earliest complete current
+  remediation is a registry removal, security-holder replacement, or other non-Git event.
+  Record the registry ref/version and evidence in the remaining object fields. If no
+  complete current fix can be established, set the entire field to `null`.
+- A nullable commit is an unavailable fact, not a shortcut. For a resolvable Git ref, use
+  the exact 40-character SHA. Explain every unavailable repository/ref/commit in the
+  evidence, report, and reasoning.
 
 Risk-equivalence requirement:
 
@@ -100,20 +129,26 @@ Before finishing, record created Docker image IDs, digests, sizes, labels, and b
 commands under `artifacts/evidence/`; stop and remove only resources created by this
 attempt. Retained build definitions and logs must be sufficient to rebuild them.
 
-Write `record.json` with exactly these semantic fields:
+Write `record.json` with exactly these semantic fields. Use the JSON number `2` for
+`schema_version`, not the string `"2"`, and copy `{{TARGET_ID}}` exactly. Never emit a
+partially empty `current_default` object: use either the complete Git object or JSON
+`null`.
 
 - `schema_version`: `2`
 - `target_id`: `{{TARGET_ID}}`
 - `source`: `GHSA`
-- `repository`: authoritative upstream HTTPS URL
+- `repository`: authoritative upstream HTTPS URL, or null only when no authoritative
+  current Git repository exists
 - `recorded_vulnerable_commit`: 40-character SHA or null
 - `proposed_fixed_commit`: 40-character SHA or null
 - `original_exclusion_reason`: null
 - `rejected_candidates`: array
 - `advisory_year_month`: `{{ADVISORY_YEAR_MONTH}}`
 - `audited_at`: UTC timestamp
-- `current_default`: object with `ref`, 40-character `commit`, and `resolved_at`
-- `maintained_branches_examined`: array of objects with `ref`, `commit`,
+- `current_default`: object with `ref`, 40-character `commit`, and `resolved_at`, or null
+  when no authoritative current Git default exists
+- `maintained_branches_examined`: array of objects with `ref`, `commit` (40-character SHA
+  or null when primary evidence cannot resolve a Git commit),
   `maintenance_evidence`, `status`, and `finding`
 - `reported_root_cause`: nonempty string
 - `attacker_boundary`: nonempty string
@@ -137,11 +172,13 @@ Write `record.json` with exactly these semantic fields:
 - `equivalent_paths_checked`: nonempty array
 - `reproduction`: object with array fields `environment_preparation_commands`, `commands`,
   and `observations`, plus `old_poc_result` and `current_equivalent_path_result`
-- `current_source_evidence`: nonempty array of objects with `url`, `commit`, `path`,
-  `lines`, and `finding`; at least one HTTPS primary-source URL must bind to the audited
-  current-default commit
+- `current_source_evidence`: nonempty array of objects with `url`, `commit` (40-character
+  SHA or null for non-Git primary evidence), `path`, `lines`, and `finding`; when
+  `current_default` is non-null, at least one HTTPS primary-source URL must bind to its
+  commit
 - `complete_fix_outside_recorded_descendant_history`: boolean or null
-- `earliest_complete_current_fix`: object with `commit`, `ref`, and `evidence`, or null
+- `earliest_complete_current_fix`: object with `commit` (40-character SHA or null for a
+  registry-level/non-Git remediation), `ref`, and `evidence`, or null
 - `artifact_root`: `{{ATTEMPT_DIR}}/artifacts`
 - `reasoning`: concise nonempty explanation tied to the same root cause, boundary, and impact
 

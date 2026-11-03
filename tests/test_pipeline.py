@@ -3,12 +3,13 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from ghsa_repro.config import load_config
 from ghsa_repro.pipeline import (
     AuditPipeline,
     _publish_record,
+    agent_environment,
     codex_command,
     initialize_run,
     load_run,
@@ -23,6 +24,20 @@ SHA = "a" * 40
 
 
 class PipelineTests(unittest.TestCase):
+    def test_agent_environment_does_not_expose_github_token(self):
+        config = load_config(ROOT / "config.example.json")
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            "os.environ",
+            {
+                "GH_TOKEN": "github-test-token",
+                "GLM_API_KEY_SECLAB": "model-test-token",
+            },
+            clear=False,
+        ):
+            environment = agent_environment(config, Path(temporary))
+        self.assertNotIn("GH_TOKEN", environment)
+        self.assertEqual(environment["GLM_API_KEY_SECLAB"], "model-test-token")
+
     def test_provider_command_respects_output_schema_capability(self):
         config = load_config(ROOT / "config.example.json")
         command = codex_command(
@@ -248,6 +263,104 @@ class PipelineTests(unittest.TestCase):
             self.assertIn(
                 "source evidence must bind to the current-default commit",
                 validate_record(record, item, attempt),
+            )
+
+    def test_registry_only_record_allows_unavailable_git_facts(self):
+        item = {
+            "target_id": "GHSA-abcd-1234-efgh",
+            "advisory_year_month": "2020-09",
+            "severity": "critical",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            attempt = Path(temporary) / item["target_id"] / "attempts/01"
+            for relative in (
+                "artifacts/README.md",
+                "artifacts/prepare-env.sh",
+                "artifacts/run-poc.sh",
+                "artifacts/observations.json",
+                "report.md",
+            ):
+                path = attempt / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("test\n")
+            record = {
+                "schema_version": 2,
+                "target_id": item["target_id"],
+                "source": "GHSA",
+                "repository": None,
+                "recorded_vulnerable_commit": None,
+                "proposed_fixed_commit": None,
+                "original_exclusion_reason": None,
+                "rejected_candidates": [],
+                "advisory_year_month": item["advisory_year_month"],
+                "audited_at": "2026-01-01T00:00:00Z",
+                "current_default": None,
+                "maintained_branches_examined": [
+                    {
+                        "ref": "npm:example@0.0.1-security",
+                        "commit": None,
+                        "maintenance_evidence": "registry security holder",
+                        "status": "non_git_registry_replacement",
+                        "finding": "the public install boundary no longer serves code",
+                    }
+                ],
+                "reported_root_cause": "malicious install script",
+                "attacker_boundary": "installing the public package",
+                "reported_severity": "critical",
+                "reported_impact": "host command execution",
+                "current_severity": "none",
+                "current_impact": "the public registry serves only a security holder",
+                "impact_equivalence": "not_reached",
+                "attacker_prerequisite_change": "stricter",
+                "risk_change": "not_reachable",
+                "risk_comparison": "the historical package is no longer publicly installable",
+                "current_status": "feature_removed_or_security_boundary_eliminated",
+                "proof_level": "static_strong",
+                "equivalent_paths_checked": ["current registry package"],
+                "reproduction": {
+                    "environment_preparation_commands": [],
+                    "commands": [],
+                    "observations": ["registry holder inspected"],
+                    "old_poc_result": "historical artifact unavailable",
+                    "current_equivalent_path_result": "no executable package content",
+                },
+                "current_source_evidence": [
+                    {
+                        "url": "https://registry.npmjs.org/example",
+                        "commit": None,
+                        "path": "dist-tags.latest",
+                        "lines": None,
+                        "finding": "latest resolves to a security holder",
+                    }
+                ],
+                "complete_fix_outside_recorded_descendant_history": True,
+                "earliest_complete_current_fix": {
+                    "commit": None,
+                    "ref": "npm:example@0.0.1-security",
+                    "evidence": "registry publication metadata",
+                },
+                "artifact_root": "attempts/01/artifacts",
+                "reasoning": "primary registry evidence establishes a non-Git removal",
+            }
+            self.assertEqual(validate_record(record, item, attempt), [])
+
+            record["repository"] = "https://github.com/example/project"
+            record["current_default"] = {
+                "ref": "refs/heads/main",
+                "commit": None,
+                "resolved_at": "2026-01-01T00:00:00Z",
+            }
+            errors = validate_record(record, item, attempt)
+            self.assertIn("current_default.commit is invalid", errors)
+            self.assertIn(
+                "source evidence must bind to the current-default commit", errors
+            )
+
+            record["current_default"] = None
+            errors = validate_record(record, item, attempt)
+            self.assertIn(
+                "current_default must be an object when repository is available",
+                errors,
             )
 
     def test_reachable_status_cannot_hide_risk_downgrade(self):

@@ -125,10 +125,12 @@ def validate_record(
     require(schema_version in {1, 2}, "schema_version must be 1 or 2")
     require(record.get("target_id") == item["target_id"], "target_id mismatch")
     require(record.get("source") == "GHSA", "source must be GHSA")
+    repository = record.get("repository")
     require(
-        isinstance(record.get("repository"), str)
-        and record["repository"].startswith("https://"),
-        "repository must be an authoritative HTTPS URL",
+        repository is None
+        or isinstance(repository, str)
+        and repository.startswith("https://"),
+        "repository must be null or an authoritative HTTPS URL",
     )
     for field in ("recorded_vulnerable_commit", "proposed_fixed_commit"):
         value = record.get(field)
@@ -225,7 +227,20 @@ def validate_record(
     )
 
     current = record.get("current_default")
-    require(isinstance(current, dict), "current_default must be an object")
+    require(
+        current is None or isinstance(current, dict),
+        "current_default must be an object or null",
+    )
+    if repository is None:
+        require(
+            current is None,
+            "current_default must be null when repository is null",
+        )
+    elif isinstance(repository, str):
+        require(
+            isinstance(current, dict),
+            "current_default must be an object when repository is available",
+        )
     if isinstance(current, dict):
         require(
             set(current) == {"ref", "commit", "resolved_at"},
@@ -255,8 +270,11 @@ def validate_record(
             } <= set(branch)
             require(valid, f"maintained_branches_examined[{index}] is invalid")
             if valid:
+                branch_commit = branch["commit"]
                 require(
-                    bool(SHA40.fullmatch(str(branch["commit"]))),
+                    branch_commit is None
+                    or isinstance(branch_commit, str)
+                    and bool(SHA40.fullmatch(branch_commit)),
                     f"maintained_branches_examined[{index}].commit is invalid",
                 )
 
@@ -292,17 +310,27 @@ def validate_record(
                     str(entry["url"]).startswith("https://"),
                     f"evidence[{index}].url must be HTTPS",
                 )
+                evidence_commit = entry["commit"]
                 require(
-                    bool(SHA40.fullmatch(str(entry["commit"]))),
+                    evidence_commit is None
+                    or isinstance(evidence_commit, str)
+                    and bool(SHA40.fullmatch(evidence_commit)),
                     f"evidence[{index}].commit is invalid",
                 )
-                if isinstance(current, dict) and entry["commit"] == current.get(
-                    "commit"
+                current_commit = (
+                    current.get("commit") if isinstance(current, dict) else None
+                )
+                if (
+                    isinstance(current_commit, str)
+                    and bool(SHA40.fullmatch(current_commit))
+                    and entry["commit"] == current_commit
                 ):
                     bound_current = True
-        require(
-            bound_current, "source evidence must bind to the current-default commit"
-        )
+        if isinstance(current, dict):
+            require(
+                bound_current,
+                "source evidence must bind to the current-default commit",
+            )
 
     complete = record.get("complete_fix_outside_recorded_descendant_history")
     require(
@@ -319,8 +347,11 @@ def validate_record(
             {"commit", "ref", "evidence"} <= set(earliest),
             "earliest_complete_current_fix fields are invalid",
         )
+        earliest_commit = earliest.get("commit")
         require(
-            bool(SHA40.fullmatch(str(earliest.get("commit", "")))),
+            earliest_commit is None
+            or isinstance(earliest_commit, str)
+            and bool(SHA40.fullmatch(earliest_commit)),
             "earliest fix commit is invalid",
         )
 
